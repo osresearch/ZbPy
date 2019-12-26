@@ -160,26 +160,3 @@ def encrypt(auth, message, nonce, aes):
 
 	# return the encrypted MIC
 	return mic
-
-if __name__ == "__main__":
-	import AES
-	aes = AES.AES(b"\x01\x03\x05\x07\x09\x0b\x0d\x0f\x00\x02\x04\x06\x08\x0a\x0c\x0d")
-	message = bytearray(b'\x0c\x00\x00\x06\x00\x04\x01\x01#\x01\r\x02')
-	mic = encrypt(
-		bytearray(b'H\x02\xfd\xff8+\x0bC-\x87H\x04\x00\xb1\x9d\xe8\x0b\x00K\x12\x00\x00'), # auth
-		message,
-		bytearray(b'\x01\xb1\x9d\xe8\x0b\x00K\x12\x00\x87H\x04\x00-\x00\x00'), # nonce
-		aes
-	)
-	#print("message=", message)
-	#print("mic=", mic)
-	cipher_mic= bytearray(b'\x12P\x1f\xf1')
-	cipher_message = bytearray(b'\x05Ve\xc1O\x13\x10$\x10\x07\x8a=')
-	if message != cipher_message:
-		print("cipher message bad")
-	if mic != cipher_mic:
-		print("cipher mic bad")
-	if message == cipher_message and mic == cipher_mic:
-		#print("Good cipher!")
-		pass
-

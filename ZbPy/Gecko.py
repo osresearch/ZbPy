@@ -1,10 +1,23 @@
 # Silicon Labs Gecko board specific parser and packet sniffer
+from micropython import mem_info
+import gc
+
+from ZbPy import AES
+mem_info()
+from ZbPy import IEEE802154
+mem_info()
+from ZbPy import ZigbeeNetwork
+mem_info()
+from ZbPy import ZigbeeApplication
+mem_info()
+from ZbPy import ZigbeeCluster
+mem_info()
+gc.collect()
+mem_info()
+
 import Radio
-import AES
-import IEEE802154
-import ZigbeeNetwork
-import ZigbeeApplication
-import ZigbeeCluster
+
+print("Gecko init")
 
 # This is the "well known" zigbee2mqtt key.
 # The Ikea gateway uses a different key that has to be learned

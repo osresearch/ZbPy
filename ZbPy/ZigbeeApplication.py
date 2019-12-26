@@ -113,26 +113,3 @@ class ZigbeeApplication:
 			hdr.extend(self.payload.serialize())
 
 		return hdr
-
-
-if __name__ == "__main__":
-	import AES
-	import IEEE802154
-	from binascii import hexlify
-	from ZigbeeNetwork import ZigbeeNetwork
-	nwk_key = b"\x01\x03\x05\x07\x09\x0b\x0d\x0f\x00\x02\x04\x06\x08\x0a\x0c\x0d"
-	aes = AES.AES(nwk_key)
-	golden = bytearray.fromhex("41883b621affff00004802fdff382b0b432887480400b19de80b004b120000055665c14f13102410078a3d12501ff1")
-	ieee = IEEE802154.IEEE802154(data=golden)
-	nwk = ZigbeeNetwork(aes=aes, data=ieee.payload)
-	ieee.payload = nwk
-	golden_aps = nwk.payload
-	aps = ZigbeeApplication(data=nwk.payload)
-	nwk.payload = aps
-	print(ieee)
-	round_trip = ieee.serialize()
-	if golden != round_trip:
-		print("---- bad round trip!")
-		print(hexlify(golden_aps))
-		print(hexlify(aps.serialize()))
-
