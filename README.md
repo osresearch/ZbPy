@@ -23,8 +23,10 @@ install all of the code from the `ZbPy` directory into the flash on the device.
 
 # ZigBee network layers
 
-IEEE802.15.4
-Network Layer
-Application Support Layer
-ZigBee Cluster library
+* Phyiscal layer (handled by the radio)
+* IEEE802.15.4
+* NWK - Network Layer
+* Security Layer (not really a layer, an optional part of the NWK header)
+* APS - Application Support Layer
+* ZCL - ZigBee Cluster Library
 
