@@ -16,7 +16,7 @@ FRAME_TYPE_CMD = 1
 FRAME_TYPE_RESERVED = 2
 FRAME_TYPE_PAN = 3
 
-import CCM
+from ZbPy import CCM
 
 class ZigbeeNetwork:
 

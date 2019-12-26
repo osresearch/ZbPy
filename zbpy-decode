@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+# Decode hex dumps of ZigBee packets on stdin
+import sys
+from binascii import unhexlify
+from ZbPy import AES
+from ZbPy import IEEE802154
+from ZbPy import ZigbeeNetwork
+from ZbPy import ZigbeeApplication
+from ZbPy import ZigbeeCluster
+
+# This is the "well known" zigbee2mqtt key.
+# The Ikea gateway uses a different key that has to be learned
+# by joining the network (not yet implemented)
+nwk_key = unhexlify("01030507090b0d0f00020406080a0c0d")
+aes = AES.AES(nwk_key)
+
+def process_packet(data):
+	#print(data)
+	ieee = IEEE802154.IEEE802154(data=data)
+
+	if ieee.frame_type != IEEE802154.FRAME_TYPE_DATA or len(ieee.payload) == 0:
+		print("IEEE:", ieee)
+		return ieee
+
+	nwk = ZigbeeNetwork.ZigbeeNetwork(data=ieee.payload, aes=aes)
+	ieee.payload = nwk
+	if nwk.frame_type != ZigbeeNetwork.FRAME_TYPE_DATA:
+		print("NWK:", ieee)
+		return ieee
+
+	aps = ZigbeeApplication.ZigbeeApplication(data=nwk.payload)
+	nwk.payload = aps
+	if aps.frame_type != ZigbeeApplication.FRAME_TYPE_DATA:
+		print("APS:", ieee)
+		return ieee
+
+	# join requests are "special" for now
+	if aps.cluster == 0x36:
+		print("JOIN:", ieee)
+		return ieee
+
+	zcl = ZigbeeCluster.ZigbeeCluster(data=aps.payload)
+	aps.payload = zcl
+
+	print("ZCL:", ieee)
+	return ieee
+
+
+while True:
+	line = sys.stdin.readline()
+	if not line:
+		break
+
+	data = bytearray(unhexlify(line.rstrip()))
+	process_packet(data)
