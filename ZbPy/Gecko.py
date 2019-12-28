@@ -1,5 +1,6 @@
 # Silicon Labs Gecko board specific parser and packet sniffer
 from micropython import mem_info
+from ubinascii import unhexlify, hexlify
 import gc
 
 from ZbPy import AES
@@ -22,7 +23,7 @@ print("Gecko init")
 # This is the "well known" zigbee2mqtt key.
 # The Ikea gateway uses a different key that has to be learned
 # by joining the network (not yet implemented)
-nwk_key = b"\x01\x03\x05\x07\x09\x0b\x0d\x0f\x00\x02\x04\x06\x08\x0a\x0c\x0d"
+nwk_key = unhexlify(b"01030507090b0d0f00020406080a0c0d")
 aes = AES.AES(nwk_key)
 
 # Only need one AES object in ECB mode since there is no
@@ -41,7 +42,12 @@ def loop(sniff):
 		Radio.promiscuous(1)
 
 	while True:
-		process_packet()
+		b = Radio.rx()
+		if b is None:
+			continue
+
+		# discard the weird bytes, not FCS, not sure what they are
+		process_packet(b[:-2])
 
 def process_one():
 	spins = 0
@@ -52,15 +58,9 @@ def process_one():
 		spins += 1
 	return None
 
-def process_packet():
-	b = Radio.rx()
-	if b is None:
-		return None
-
+def process_packet(data):
 	try:
 		#print("------")
-		# discard the weird bytes, not FCS, not sure what they are
-		data = b[:-2]
 		#print(data)
 		ieee = IEEE802154.IEEE802154(data=data)
 
@@ -108,9 +108,7 @@ def process_packet():
 
 		return ieee
 	except:
-		for c in b:
-			print("%02x" % (c), end='')
-		print()
+		print(hexlify(data))
 		raise
 
 def sniff():
@@ -119,9 +117,8 @@ def sniff():
 		bytes = Radio.rx();
 		if bytes is None:
 			continue
-		for c in bytes:
-			print("%02x" % (c), end='')
-		print()
+		# throw away the extra two bytes of wtf
+		print(hexlify(bytes[:-2]))
 
 
 beacon_packet = IEEE802154.IEEE802154(frame_type=3, seq=99, command=7, dst=0xffff, dst_pan=0xffff)
@@ -285,3 +282,8 @@ def join():
 	#loop(0)
 
 	return True
+
+
+def test():
+	data = bytearray(unhexlify("41883b621affff00004802fdff382b0b432887480400b19de80b004b120000055665c14f13102410078a3d12501ff1"))
+	print(process_packet(data))
