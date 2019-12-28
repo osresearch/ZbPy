@@ -23,13 +23,13 @@ except:
 	class AES:
 		def __init__(self, key_encrypt):
 			self.key_encrypt = key_encrypt
-			self.key_decrypt = Crypto.aes128decryptkey(key_encrypt)
+			self.key_decrypt = Crypto.aes_decryptkey(key_encrypt)
 			self.out = bytearray(16)
 
 		def encrypt(self, plaintext):
-			Crypto.aes128ecb_encrypt(self.key_encrypt, plaintext, self.out)
+			Crypto.aes_ecb_encrypt(self.key_encrypt, plaintext, self.out)
 			return self.out
 
 		def decrypt(self, ciphertext):
-			Crypto.aes128ecb_decrypt(self.key_decrypt, ciphertext, self.out)
+			Crypto.aes_ecb_decrypt(self.key_decrypt, ciphertext, self.out)
 			return self.out
