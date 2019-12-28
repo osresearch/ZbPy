@@ -1,34 +1,35 @@
-#!/usr/bin/env python
-######
-###### Temporary hack to remove all of the AES since it was using
-###### too much RAM.  Need to move this into C.
-######
-"""
-    Copyright (C) 2012 Bo Zhu http://about.bozhu.me
+#
+#
+try:
+	# if Crypto.Cipher.AES is availble, use it instead
+	from Crypto.Cipher import AES as PyAES
+	class AES:
+		def __init__(self, key_encrypt):
+			self.aes = PyAES.new(key_encrypt, PyAES.MODE_ECB)
 
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the "Software"),
-    to deal in the Software without restriction, including without limitation
-    the rights to use, copy, modify, merge, publish, distribute, sublicense,
-    and/or sell copies of the Software, and to permit persons to whom the
-    Software is furnished to do so, subject to the following conditions:
+		def encrypt(self, plaintext):
+			return bytearray(self.aes.encrypt(bytes(plaintext)))
 
-    The above copyright notice and this permission notice shall be included in
-    all copies or substantial portions of the Software.
+		def decrypt(self, ciphertext):
+			return bytearray(self.aes.decrypt(bytes(plaintext)))
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-    DEALINGS IN THE SOFTWARE.
-"""
-class AES:
-    def __init__(self, master_key):
-	pass
+except:
+	# Gecko AES wrapper in ECB mode.
+	# on the actual hardware, use the accelerated mode
+	# This uses a temporary buffer for the output and must be used
+	# before the next operation.
+	from machine import Crypto
 
-    def encrypt(self, plaintext):
-	return plaintext
-    def decrypt(self, ciphertext):
-	return ciphertext
+	class AES:
+		def __init__(self, key_encrypt):
+			self.key_encrypt = key_encrypt
+			self.key_decrypt = Crypto.aes128decryptkey(key_encrypt)
+			self.out = bytearray(16)
+
+		def encrypt(self, plaintext):
+			Crypto.aes128ecb_encrypt(self.key_encrypt, plaintext, self.out)
+			return self.out
+
+		def decrypt(self, ciphertext):
+			Crypto.aes128ecb_decrypt(self.key_decrypt, ciphertext, self.out)
+			return self.out
