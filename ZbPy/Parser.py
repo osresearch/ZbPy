@@ -4,11 +4,10 @@
 from binascii import unhexlify, hexlify
 
 from ZbPy import AES
-from ZbPy import IEEE802154
-from ZbPy import ZigbeeNetwork
-from ZbPy import ZigbeeApplication
-from ZbPy import ZigbeeCluster
-from ZbPy import Parser
+from ZbPy.IEEE802154 import IEEE802154
+from ZbPy.ZigbeeNetwork import ZigbeeNetwork
+from ZbPy.ZigbeeApplication import ZigbeeApplication
+from ZbPy.ZigbeeCluster import ZigbeeCluster
 
 import gc
 gc.collect()
@@ -19,13 +18,17 @@ gc.collect()
 nwk_key = unhexlify(b"01030507090b0d0f00020406080a0c0d")
 aes = AES.AES(nwk_key)
 
-# Only need one AES object in ECB mode since there is no
-# state to track
+# Pre-allocate message types for the parser
+# Only one message can be parsed at a time
+ieee = IEEE802154()
+nwk = ZigbeeNetwork(aes=aes)
+aps = ZigbeeApplication()
+zcl = ZigbeeCluster()
 
-def parse(data, verbose=False, validate=True):
+def parse(data, verbose=False):
 	#print("------")
 	#print(data)
-	ieee = IEEE802154.IEEE802154(data=data)
+	ieee.deserialize(data)
 
 	if verbose: print(ieee)
 
@@ -34,19 +37,14 @@ def parse(data, verbose=False, validate=True):
 	if len(ieee.payload) == 0:
 		return ieee, "ieee"
 
-	nwk = ZigbeeNetwork.ZigbeeNetwork(
-		data=ieee.payload,
-		aes=aes,
-		validate=validate
-	)
-
+	nwk.deserialize(ieee.payload)
 	ieee.payload = nwk
 	if verbose: print(nwk)
 
 	if nwk.frame_type != ZigbeeNetwork.FRAME_TYPE_DATA:
 		return ieee, "nwk"
 
-	aps = ZigbeeApplication.ZigbeeApplication(data=nwk.payload)
+	aps.deserialize(nwk.payload)
 	nwk.payload = aps
 
 	if verbose: print(aps)
@@ -58,7 +56,7 @@ def parse(data, verbose=False, validate=True):
 	if aps.cluster == 0x36:
 		return ieee, "join"
 
-	zcl = ZigbeeCluster.ZigbeeCluster(data=aps.payload)
+	zcl.deserialize(aps.payload)
 	aps.payload = zcl
 
 	if verbose: print(zcl)
