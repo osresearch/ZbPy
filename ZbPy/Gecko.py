@@ -1,33 +1,22 @@
 # Silicon Labs Gecko board specific parser and packet sniffer
 from micropython import mem_info
-from ubinascii import unhexlify, hexlify
+from binascii import unhexlify, hexlify
 import gc
 
 from ZbPy import AES
-mem_info()
 from ZbPy import IEEE802154
-mem_info()
 from ZbPy import ZigbeeNetwork
-mem_info()
 from ZbPy import ZigbeeApplication
-mem_info()
 from ZbPy import ZigbeeCluster
-mem_info()
-gc.collect()
-mem_info()
+from ZbPy import Parser
 
 import Radio
+from machine import Pin
+reset_pin = Pin(0, Pin.IN) # negative logic
 
 print("Gecko init")
-
-# This is the "well known" zigbee2mqtt key.
-# The Ikea gateway uses a different key that has to be learned
-# by joining the network (not yet implemented)
-nwk_key = unhexlify(b"01030507090b0d0f00020406080a0c0d")
-aes = AES.AES(nwk_key)
-
-# Only need one AES object in ECB mode since there is no
-# state to track
+gc.collect()
+mem_info()
 
 Radio.init()
 seq = 99
@@ -36,12 +25,20 @@ mac_addr = Radio.mac()
 nwk_addr = 0xffff
 max_spins = 20000
 
+#	# quick check for ack
+#	if ieee.ack_req and \
+#	(((type(ieee.dst) is bytearray) and ieee.dst == mac_addr) \
+#	or ((ieee.dst is not None) and ieee.dst == nwk_addr)):
+#		ack(ieee.seq)
+
 
 def loop(sniff):
 	if sniff:
 		Radio.promiscuous(1)
 
 	while True:
+		if reset_pin() == 0:
+			break
 		b = Radio.rx()
 		if b is None:
 			continue
@@ -52,7 +49,14 @@ def loop(sniff):
 def process_one():
 	spins = 0
 	while spins < max_spins:
-		pkt = process_packet()
+		if reset_pin() == 0:
+			break
+
+		b = Radio.rx()
+		if b is None:
+			continue
+
+		pkt = process_packet(b[:-2])
 		if pkt is not None:
 			return pkt
 		spins += 1
@@ -60,41 +64,19 @@ def process_one():
 
 def process_packet(data):
 	try:
-		#print("------")
-		#print(data)
-		ieee = IEEE802154.IEEE802154(data=data)
+		ieee,packet_type = Parser.parse(data, validate=True)
 
-		# quick check for ack
-		if ieee.ack_req and \
-		(((type(ieee.dst) is bytearray) and ieee.dst == mac_addr) \
-		or ((ieee.dst is not None) and ieee.dst == nwk_addr)):
-			ack(ieee.seq)
+		if ieee.frame_type == IEEE802154.FRAME_TYPE_ACK:
+			print("ack(seq=%d)" % ieee.seq)
+			return
 
-		#print(ieee)
-		if ieee.frame_type != IEEE802154.FRAME_TYPE_DATA:
-			return ieee
-		if len(ieee.payload) == 0:
-			print(ieee)
-			return ieee
+		print(packet_type + ":", ieee)
+		if packet_type != "zcl":
+			return
 
-		nwk = ZigbeeNetwork.ZigbeeNetwork(data=ieee.payload, aes=aes, validate=False)
-		ieee.payload = nwk
-		#print(nwk)
-		if nwk.frame_type != ZigbeeNetwork.FRAME_TYPE_DATA:
-			return ieee
-
-		aps = ZigbeeApplication.ZigbeeApplication(data=nwk.payload)
-		nwk.payload = aps
-		#print(aps)
-		if aps.frame_type != ZigbeeApplication.FRAME_TYPE_DATA:
-			return ieee
-
-		# join requests are "special" for now
-		if aps.cluster == 0x36:
-			return ieee
-
-		zcl = ZigbeeCluster.ZigbeeCluster(data=aps.payload)
-		aps.payload = zcl
+		nwk = ieee.payload
+		aps = nwk.payload
+		zcl = aps.payload
 
 		print("%02x %04x%c %04x: cluster %04x:%02x/%d" % (
 			nwk.seq,
@@ -106,7 +88,6 @@ def process_packet(data):
 			zcl.direction,
 		))
 
-		return ieee
 	except:
 		print(hexlify(data))
 		raise
@@ -114,6 +95,9 @@ def process_packet(data):
 def sniff():
 	Radio.promiscuous(True)
 	while True:
+		if reset_pin() == 0:
+			break
+
 		bytes = Radio.rx();
 		if bytes is None:
 			continue
@@ -129,6 +113,9 @@ def beacon():
 def wait_packet(wait_type):
 	spins = 0
 	while spins < max_spins:
+		if reset_pin() == 0:
+			break
+
 		spins += 1
 		b = Radio.rx()
 		if b is None:
@@ -174,7 +161,7 @@ def leave():
 		dst_pan=pan,
 		src=nwk_addr,
 		payload=ZigbeeNetwork.ZigbeeNetwork(
-			aes=aes,
+			aes=Parser.aes,
 			frame_type=ZigbeeNetwork.FRAME_TYPE_CMD,
 			version=2,
 			radius=1,
@@ -264,7 +251,14 @@ def join():
 	nwk_addr = (assoc.payload[0] << 0) | (assoc.payload[1] << 8)
 	status = assoc.payload[2]
 
+	if status == 2:
+		print("JOIN DENIED!")
+		return
+
+	print("------------")
 	print("New network address 0x%04x status %d" % (nwk_addr, status))
+	return True
+
 	#Radio.promiscuous(0)
 	#Radio.address(nwk_addr, pan)
 
@@ -284,6 +278,3 @@ def join():
 	return True
 
 
-def test():
-	data = bytearray(unhexlify("41883b621affff00004802fdff382b0b432887480400b19de80b004b120000055665c14f13102410078a3d12501ff1"))
-	print(process_packet(data))
