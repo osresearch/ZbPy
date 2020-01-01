@@ -76,7 +76,7 @@ class ZigbeeCluster:
 			| (self.disable_default_response << 4)
 
 		hdr.append(fcf)
-		hdr.append(self.seq)
+		hdr.append(self.seq & 0x7F)
 		hdr.append(self.command)
 
 		if type(self.payload) is bytes or type(self.payload) is bytearray:

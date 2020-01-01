@@ -158,7 +158,7 @@ class ZigbeeNetwork:
 		hdr.append((self.src >> 0) & 0xFF)
 		hdr.append((self.src >> 8) & 0xFF)
 		hdr.append(self.radius)
-		hdr.append(self.seq)
+		hdr.append(self.seq & 0x7F)
 		if self.ext_dst is not None:
 			hdr.extend(self.ext_dst)
 			fcf |= 1 << 11

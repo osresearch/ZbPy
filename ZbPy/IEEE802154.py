@@ -104,7 +104,7 @@ class IEEE802154:
 		hdr = bytearray()
 		hdr.append(0) # FCF will be filled in later
 		hdr.append(0)
-		hdr.append(self.seq)
+		hdr.append(self.seq & 0x7F)
 
 		fcf = self.frame_type & 0x7
 		if self.ack_req:

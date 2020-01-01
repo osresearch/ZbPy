@@ -105,7 +105,7 @@ class ZigbeeApplication:
 		hdr.append((self.profile >> 0) & 0xFF)
 		hdr.append((self.profile >> 8) & 0xFF)
 		hdr.append(self.src)
-		hdr.append(self.seq)
+		hdr.append(self.seq & 0x7F)
 
 		if type(self.payload) is bytes or type(self.payload) is bytearray:
 			hdr.extend(self.payload)
