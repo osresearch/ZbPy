@@ -24,7 +24,7 @@ class ZigbeeCluster:
 		disable_default_response = False,
 		seq = 0,
 		command = 0,
-		payload = None,
+		payload = b'',
 	):
 		if data is not None:
 			self.deserialize(data)
@@ -49,7 +49,13 @@ class ZigbeeCluster:
 		if self.manufacturer_specific:
 			params.append("manufacturer_specific=1")
 
-		params.append("payload=" + str(self.payload))
+		if type(self.payload) is memoryview \
+		or type(self.payload) is bytearray \
+		or type(self.payload) is bytes:
+			if len(self.payload) != 0:
+				params.append("payload=" + str(bytes(self.payload)))
+		else:
+			params.append("payload=" + str(self.payload))
 
 		return "ZigbeeCluster(" + ", ".join(params) + ")"
 

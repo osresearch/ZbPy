@@ -4,10 +4,10 @@
 from binascii import unhexlify, hexlify
 
 from ZbPy import AES
-from ZbPy.IEEE802154 import IEEE802154
-from ZbPy.ZigbeeNetwork import ZigbeeNetwork
-from ZbPy.ZigbeeApplication import ZigbeeApplication
-from ZbPy.ZigbeeCluster import ZigbeeCluster
+from ZbPy import IEEE802154
+from ZbPy import ZigbeeNetwork
+from ZbPy import ZigbeeApplication
+from ZbPy import ZigbeeCluster
 
 import gc
 gc.collect()
@@ -20,10 +20,10 @@ aes = AES.AES(nwk_key)
 
 # Pre-allocate message types for the parser
 # Only one message can be parsed at a time
-ieee = IEEE802154()
-nwk = ZigbeeNetwork(aes=aes)
-aps = ZigbeeApplication()
-zcl = ZigbeeCluster()
+ieee = IEEE802154.IEEE802154()
+nwk = ZigbeeNetwork.ZigbeeNetwork(aes=aes)
+aps = ZigbeeApplication.ZigbeeApplication()
+zcl = ZigbeeCluster.ZigbeeCluster()
 
 def parse(data, verbose=False):
 	#print("------")

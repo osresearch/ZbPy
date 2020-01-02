@@ -97,7 +97,13 @@ class ZigbeeNetwork:
 			if not self.valid:
 				params.append("valid=FALSE")
 
-		params.append("payload=" + str(self.payload))
+		if type(self.payload) is memoryview \
+		or type(self.payload) is bytearray \
+		or type(self.payload) is bytes:
+			if len(self.payload) != 0:
+				params.append("payload=" + str(bytes(self.payload)))
+		else:
+			params.append("payload=" + str(self.payload))
 
 		return "ZigbeeNetwork(" + ", ".join(params) + ")"
 
@@ -138,7 +144,12 @@ class ZigbeeNetwork:
 		else:
 			# security header is present, attempt to decrypt
 			# and validate the message.
-			self.ccm_decrypt(b, j)
+			try:
+				self.ccm_decrypt(b, j)
+			except:
+				print("---- BAD CCM ----")
+				self.valid = False
+				self.payload = b[j:]
 		return self
 
 	# Convert an object back to bytes, with optional encryption

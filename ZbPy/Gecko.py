@@ -13,6 +13,7 @@ from ZbPy import Parser
 import Radio
 from machine import Pin
 reset_pin = Pin(0, Pin.IN) # negative logic
+led_pin = Pin(3, Pin.OUT)
 
 print("Gecko init")
 gc.collect()
@@ -44,7 +45,7 @@ def loop(sniff):
 			continue
 
 		# discard the weird bytes, not FCS, not sure what they are
-		process_packet(b[:-2])
+		process_packet(memoryview(b)[:-2])
 
 def process_one():
 	spins = 0
@@ -56,7 +57,7 @@ def process_one():
 		if b is None:
 			continue
 
-		pkt = process_packet(b[:-2])
+		pkt = process_packet(memoryview(b)[:-2])
 		if pkt is not None:
 			return pkt
 		spins += 1
@@ -64,10 +65,10 @@ def process_one():
 
 def process_packet(data):
 	try:
-		ieee,packet_type = Parser.parse(data, validate=True)
+		ieee,packet_type = Parser.parse(data)
 
 		if ieee.frame_type == IEEE802154.FRAME_TYPE_ACK:
-			print("ack(seq=%d)" % ieee.seq)
+			print("ack(%d)" % ieee.seq)
 			return
 
 		print(packet_type + ":", ieee)
@@ -112,6 +113,7 @@ def beacon():
 
 def wait_packet(wait_type):
 	spins = 0
+	ieee = IEEE802154.IEEE802154()
 	while spins < max_spins:
 		if reset_pin() == 0:
 			break
@@ -121,10 +123,11 @@ def wait_packet(wait_type):
 		if b is None:
 			continue
 		# fast discard
+		print("b=", b[0])
 		frame_type = b[0] & 0x7
 		if frame_type != wait_type:
 			continue
-		ieee = IEEE802154.IEEE802154(data=b[:-2])
+		ieee.deserialize(memoryview(b)[:-2])
 		print("<--", ieee)
 		return ieee
 	return None
@@ -133,14 +136,21 @@ def tx(msg, wait=True, retries=3):
 	print("-->", msg)
 	b = msg.serialize()
 	for i in range(retries):
+		led_pin.on()
 		Radio.tx(b)
+
 		if not wait or not msg.ack_req:
+			led_pin.off()
 			return True
 
 		ack = wait_packet(IEEE802154.FRAME_TYPE_ACK)
 		if ack is not None and ack.seq == msg.seq:
+			led_pin.off()
 			return True
+
 		print("<-- RETRY")
+
+	led_pin.off()
 	return False
 
 def discover_pan():
@@ -257,7 +267,8 @@ def join():
 
 	print("------------")
 	print("New network address 0x%04x status %d" % (nwk_addr, status))
-	return True
+	gc.collect()
+	return nwk_addr
 
 	#Radio.promiscuous(0)
 	#Radio.address(nwk_addr, pan)

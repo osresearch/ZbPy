@@ -25,7 +25,7 @@ class ZigbeeApplication:
 		cluster = 0,
 		profile = 0,
 		seq = 0,
-		payload = None,
+		payload = b'',
 		ack_req = False,
 	):
 		if data is not None:
@@ -59,7 +59,13 @@ class ZigbeeApplication:
 		if self.ack_req:
 			params.append("ack_req=1")
 
-		params.append("payload=" + str(self.payload))
+		if type(self.payload) is memoryview \
+		or type(self.payload) is bytearray \
+		or type(self.payload) is bytes:
+			if len(self.payload) != 0:
+				params.append("payload=" + str(bytes(self.payload)))
+		else:
+			params.append("payload=" + str(self.payload))
 
 		return "ZigbeeApplication(" + ", ".join(params) + ")"
 

@@ -153,7 +153,9 @@ class IEEE802154:
 		if self.frame_type == FRAME_TYPE_CMD:
 			hdr.append(self.command)
 
-		if type(self.payload) is bytes or type(self.payload) is bytearray:
+		if type(self.payload) is memoryview \
+		or type(self.payload) is bytearray \
+		or type(self.payload) is bytes:
 			hdr.extend(self.payload)
 		else:
 			hdr.extend(self.payload.serialize())
@@ -197,6 +199,12 @@ class IEEE802154:
 		if type(self.src_pan) is int:
 			params.append("src_pan=0x%04x" % (self.src_pan))
 
-		params.append("payload=" + str(self.payload))
+		if type(self.payload) is memoryview \
+		or type(self.payload) is bytearray \
+		or type(self.payload) is bytes:
+			if len(self.payload) != 0:
+				params.append("payload=" + str(bytes(self.payload)))
+		else:
+			params.append("payload=" + str(self.payload))
 
 		return "IEEE802154(" + ", ".join(params) + ")"
