@@ -44,8 +44,8 @@ def loop(sniff):
 		if b is None:
 			continue
 
-		# discard the weird bytes, not FCS, not sure what they are
-		process_packet(memoryview(b)[:-2])
+		process_packet(memoryview(b))
+		gc.collect()
 
 def process_one():
 	spins = 0
@@ -57,7 +57,7 @@ def process_one():
 		if b is None:
 			continue
 
-		pkt = process_packet(memoryview(b)[:-2])
+		pkt = process_packet(memoryview(b))
 		if pkt is not None:
 			return pkt
 		spins += 1
@@ -103,7 +103,8 @@ def sniff():
 		if bytes is None:
 			continue
 		# throw away the extra two bytes of wtf
-		print(hexlify(bytes[:-2]))
+		x = hexlify(bytes)
+		print(x)
 
 
 beacon_packet = IEEE802154.IEEE802154(frame_type=3, seq=99, command=7, dst=0xffff, dst_pan=0xffff)
@@ -123,11 +124,11 @@ def wait_packet(wait_type):
 		if b is None:
 			continue
 		# fast discard
-		print("b=", b[0])
+		#print("b=", b[0])
 		frame_type = b[0] & 0x7
 		if frame_type != wait_type:
 			continue
-		ieee.deserialize(memoryview(b)[:-2])
+		ieee.deserialize(memoryview(b))
 		print("<--", ieee)
 		return ieee
 	return None
@@ -218,6 +219,7 @@ def join():
 	global seq
 	global nwk_addr
 	global pan
+	gc.collect()
 
 	Radio.promiscuous(1)
 

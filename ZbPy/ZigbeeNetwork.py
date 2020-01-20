@@ -78,7 +78,7 @@ class ZigbeeNetwork:
 		]
 
 		if self.ext_src is not None:
-			params.append("ext_src=" + str(self.ext_src))
+			params.append("ext_src=" + str(bytes(self.ext_src)))
 
 		if self.source_route != 0:
 			params.append("source_route=1")
@@ -90,9 +90,9 @@ class ZigbeeNetwork:
 		if self.security:
 			params.extend([
 				"security=1",
-				"sec_seq=" + str(self.sec_seq),
+				"sec_seq=" + str(bytes(self.sec_seq)),
 				"sec_key=" + str(self.sec_key),
-				"sec_key_seq=" + str(self.sec_key_seq)
+				"sec_key_seq=" + str(self.sec_key_seq),
 			])
 			if not self.valid:
 				params.append("valid=FALSE")
@@ -237,7 +237,7 @@ class ZigbeeNetwork:
 		M = b[-4:]   # message integrity code
 
 		if not CCM.decrypt(auth, C, M, nonce, self.aes, validate=self.validate):
-			print("BAD DECRYPT: ", b)
+			print("BAD DECRYPT: ", bytes(b))
 			#print("message=", C)
 			self.payload = C
 			self.valid = False
