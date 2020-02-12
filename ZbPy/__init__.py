@@ -22,7 +22,7 @@ def sniff():
 		x = repr(hexlify(pkt))[2:-1]
 		print(x)
 
-def parse():
+def parse(verbose=False):
 	while True:
 		pkt = Radio.rx()
 		if pkt is None:
@@ -36,12 +36,16 @@ def parse():
 				print(ieee)
 			continue
 
-		#print(ieee)
+		if verbose:
+			print(ieee)
 		#cluster = ieee.payload.payload.cluster
 		# IEEE/NWK/APS/ZCL/ZCL
-		zcl = ieee.payload.payload.payload.payload
+		zb = ieee.payload.payload.payload
+		zcl = zb.payload
 		#print(ieee)
-		print(zcl)
+
+		if verbose or zb.command != 0x0B:
+			print(zcl)
 
 
 handlers = {}
@@ -53,13 +57,17 @@ def bind(name, handler):
 		handlers[cluster_id] = {}
 	handlers[cluster_id][command_id] = handler
 
-def loop():
+def loop(verbose=False):
 	while True:
 		pkt = Radio.rx()
 		if pkt is None:
 			continue
-		ieee, typ = Parser.parse(pkt, filter_dupes=True)
-		if typ != "zcl":
+		try:
+			ieee, typ = Parser.parse(pkt, filter_dupes=True)
+			if typ != "zcl":
+				continue
+		except:
+			print(pkt)
 			continue
 
 		try:
@@ -68,7 +76,8 @@ def loop():
 			payload = ieee.payload.payload.payload.payload
 			command = payload.command
 
-			#print(cluster, command)
+			if verbose:
+				print(command)
 
 			if cluster not in handlers:
 				continue
