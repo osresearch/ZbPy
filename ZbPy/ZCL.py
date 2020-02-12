@@ -25,6 +25,7 @@ clusters = {
 },
 0x05: {
 	'name': 'Scenes',
+	0x0b: [ "DefaultResp", "!BB", ["id", "status"] ],
 },
 0x06: {
 	'name': 'OnOff',
@@ -34,6 +35,7 @@ clusters = {
 	0x40: [ "OffWithEffect", "!BB", ["id", "variant"] ],
 	0x41: [ "OnWithRecall", "!", [] ],
 	0x42: [ "OnWithTimedOff", "!Bhh", ["on", "time", "wait"] ],
+	0x0b: [ "DefaultResp", "!BB", ["id", "status"] ],
 },
 0x07: {
 	'name': 'OnOffConfig',
@@ -48,6 +50,7 @@ clusters = {
 	0x05: [ "MoveOnOff", "!BB", [ "dir", "rate" ] ],
 	0x06: [ "StepOnOff", "!BBh", [ "dir", "step", "time" ] ],
 	0x07: [ "Stop", "!", [] ],
+	0x0b: [ "DefaultResp", "!BB", ["id", "status"] ],
 },
 }
 
@@ -59,8 +62,7 @@ def lookup(name):
 		for command_id, fmt in cluster.items():
 			if fmt[0] == command_name:
 				return cluster_id, command_id
-	raise(name + ": Unknown cluster/command")
-	
+	raise NameError("Unknown cluster.command " + name)
 
 def unpack(fmt,names,data):
 	try:
@@ -72,7 +74,7 @@ def unpack(fmt,names,data):
 			i += 1
 		return ret
 	except:
-		print("unpack(",fmt,data,") failed")
+		print("unpack('"+fmt+"'",data,") failed")
 		raise
 
 def pack(fmt, names, data):
