@@ -28,11 +28,10 @@ zcl = ZigbeeCluster.ZigbeeCluster()
 cmd = ZCL.ZCL()
 
 # For filtering dupes
-last_src = 0
-last_seq = 0
+seqs = {}
 
 def parse(data, verbose=False, filter_dupes=False):
-	global last_src, last_seq
+	global seqs
 
 	#print("------")
 	#print(data)
@@ -52,10 +51,10 @@ def parse(data, verbose=False, filter_dupes=False):
 	if nwk.frame_type != ZigbeeNetwork.FRAME_TYPE_DATA:
 		return ieee, "nwk"
 
-	if filter_dupes and nwk.src == last_src and nwk.seq == last_seq:
-		return ieee, "dupe"
-	last_src = nwk.src
-	last_seq = nwk.seq
+	if filter_dupes:
+		if nwk.src in seqs and seqs[nwk.src] == nwk.seq:
+			return ieee, "dupe"
+	seqs[nwk.src] = nwk.seq
 
 	aps.deserialize(nwk.payload)
 	nwk.payload = aps
