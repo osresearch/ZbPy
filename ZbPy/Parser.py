@@ -8,6 +8,7 @@ from ZbPy import IEEE802154
 from ZbPy import ZigbeeNetwork
 from ZbPy import ZigbeeApplication
 from ZbPy import ZigbeeCluster
+from ZbPy import ZCL
 
 import gc
 gc.collect()
@@ -24,8 +25,15 @@ ieee = IEEE802154.IEEE802154()
 nwk = ZigbeeNetwork.ZigbeeNetwork(aes=aes)
 aps = ZigbeeApplication.ZigbeeApplication()
 zcl = ZigbeeCluster.ZigbeeCluster()
+cmd = ZCL.ZCL()
 
-def parse(data, verbose=False):
+# For filtering dupes
+last_src = 0
+last_seq = 0
+
+def parse(data, verbose=False, filter_dupes=False):
+	global last_src, last_seq
+
 	#print("------")
 	#print(data)
 	ieee.deserialize(data)
@@ -44,6 +52,11 @@ def parse(data, verbose=False):
 	if nwk.frame_type != ZigbeeNetwork.FRAME_TYPE_DATA:
 		return ieee, "nwk"
 
+	if filter_dupes and nwk.src == last_src and nwk.seq == last_seq:
+		return ieee, "dupe"
+	last_src = nwk.src
+	last_seq = nwk.seq
+
 	aps.deserialize(nwk.payload)
 	nwk.payload = aps
 
@@ -60,5 +73,13 @@ def parse(data, verbose=False):
 	aps.payload = zcl
 
 	if verbose: print(zcl)
+
+	cmd.cluster = aps.cluster
+	cmd.command = zcl.command
+	if not cmd.deserialize(zcl.payload):
+		return ieee, "zcl?"
+
+	# Successfully decoded all the way to the ZCL layer
+	zcl.payload = cmd
 
 	return ieee, "zcl"

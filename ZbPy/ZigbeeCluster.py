@@ -4,6 +4,7 @@
 #   (Optional encryption, with either Trust Center Key or Transport Key)
 #   ZigbeeApplicationSupport (APS)
 #-> ZigbeeClusterLibrary (ZCL)
+#   Various clusters
 
 # "Cluster" is a horrible name for a mesh network protocol - it implies
 # something about groups of nodes, but is Zigbee-speak for groups of commands.
