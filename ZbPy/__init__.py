@@ -1,16 +1,19 @@
 # Top level interface to the ZbPy Zigbee stack for
 # the EFM32 micropython port.
+from ubinascii import hexlify, unhexlify
+from ZbPy import Parser, ZCL
+
 try:
 	import Radio
 	import machine
-	from ubinascii import hexlify, unhexlify
-	from ZbPy import Parser, ZCL
+	import gc
+	from micropython import mem_info
 
 	Radio.init()
 	Radio.promiscuous(True)
 	machine.zrepl(False)
 except:
-	print("ZbPy failed to import")
+	print("ZbPy failed to import efm32 modules")
 
 def sniff():
 	while True:
@@ -23,13 +26,21 @@ def sniff():
 		print(x)
 
 def parse(verbose=False):
+	mem_info()
+	gc.collect()
+	mem_info()
+	count = 0
 	while True:
 		pkt = Radio.rx()
 		if pkt is None:
 			continue
-		ieee, typ = Parser.parse(pkt, filter_dupes=True)
-		if typ is None:
-			continue
+		try:
+			ieee, typ = Parser.parse(pkt, filter_dupes=True)
+			if typ is None:
+				continue
+		except:
+			print(pkt)
+			raise
 
 		if typ != "zcl":
 			if typ == "zcl?" and ieee.payload.payload.cluster != 0:
