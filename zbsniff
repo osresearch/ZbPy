@@ -62,21 +62,13 @@ stdout.buffer.write(pack("<IHHiIII",
 stdout.flush()
 
 def process_line(line):	
-	# ignore the echos back to us
-	if line[0:6] == b'SEND: ':
-		return
-
 	pkt = unhexlify(line)
-	#stderr.write(pkt + b"\n")
-	#stderr.flush()
-
 	seconds = time.time()
-	microseconds = int((seconds * 1e6) % 1e6)
-	seconds = int(seconds)
+	microseconds = (seconds * 1e6) % 1e6
 
 	stdout.buffer.write(pack("<IIII",
-		seconds,
-		microseconds,
+		int(seconds),
+		int(microseconds),
 		len(pkt),
 		len(pkt)
 	) + pkt)
