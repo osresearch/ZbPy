@@ -3,6 +3,7 @@
 try:
 	# if Crypto.Cipher.AES is availble, use it instead
 	from Crypto.Cipher import AES as PyAES
+	print("Using Crypto.Cipher.AES")
 	class AES:
 		def __init__(self, key_encrypt):
 			self.aes = PyAES.new(key_encrypt, PyAES.MODE_ECB)
@@ -11,7 +12,7 @@ try:
 			return bytearray(self.aes.encrypt(bytes(plaintext)))
 
 		def decrypt(self, ciphertext):
-			return bytearray(self.aes.decrypt(bytes(plaintext)))
+			return bytearray(self.aes.decrypt(bytes(ciphertext)))
 
 except:
 	# Gecko AES wrapper in ECB mode.
