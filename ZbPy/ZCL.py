@@ -4,7 +4,7 @@
 #   (Optional encryption, with either Trust Center Key or Transport Key)
 #   ZigbeeApplicationSupport (APS)
 #   ZigbeeClusterLibrary (ZCL)
-# ->ZCL ClusterParser
+# ->ZCL ClusterParser (for profile 0x0104)
 import struct
 
 clusters = {
@@ -19,6 +19,7 @@ clusters = {
 },
 0x03: {
 	'name': 'Identify',
+	0x00: [ 'IdentifyQuery', '!', [] ],
 },
 0x04: {
 	'name': 'Groups',
