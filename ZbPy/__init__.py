@@ -1,6 +1,6 @@
 # Top level interface to the ZbPy Zigbee stack for
 # the EFM32 micropython port.
-from ubinascii import hexlify, unhexlify
+from binascii import hexlify, unhexlify
 from ZbPy import Parser, ZCL
 
 try:
@@ -25,7 +25,7 @@ def sniff():
 		x = repr(hexlify(pkt))[2:-1]
 		print(x)
 
-def parse(verbose=False):
+def parse(verbose=False,all=False):
 	mem_info()
 	gc.collect()
 	mem_info()
@@ -43,7 +43,7 @@ def parse(verbose=False):
 			raise
 
 		if typ != "zcl":
-			if typ == "zcl?" and ieee.payload.payload.cluster != 0:
+			if all or (typ == "zcl?" and ieee.payload.payload.cluster != 0):
 				print(ieee)
 			continue
 
