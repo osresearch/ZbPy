@@ -8,8 +8,10 @@ from ZbPy import ZigbeeNetwork
 from ZbPy import ZigbeeApplication
 from ZbPy import ZigbeeCluster
 from ZbPy import ZCL
+from ZbPy import Parser
 
 from binascii import unhexlify, hexlify
+from struct import pack, unpack
 
 try:
 	from time import ticks_us
@@ -20,18 +22,28 @@ except:
 
 
 class IEEEDevice:
-	def __init__(self, tx, mac, nwk = None, pan = None):
-		self.raw_tx = tx
+	data_request_timeout = 1000000 # usec == 100 ms
+	retransmit_timeout = 1000000 # usec == 100 ms
+
+	def __init__(self, tx, mac, nwk = None, pan = None, router = None):
+		self.tx_raw = tx
 		self.nwk = nwk
 		self.mac = mac
 		self.pan = pan
+		self.router = router
 		self.seq = 0
 		self.pending_seq = None
+		self.pending_data = None
 		self.handler = lambda x: None
+		self.seqs = {}
 
+		self.tx_fail = 0
+		self.last_data_request = 0
+		self.last_tx = 0
+		self.join_failed = False
 
 	def rx(self, data):
-		if data is None:
+		if data is None or len(data) < 2: # or len(data) < 2 or len(data) & 1 != 0:
 			self.tick()
 			return
 
@@ -46,19 +58,27 @@ class IEEEDevice:
 			elif ieee.dst_pan != self.pan:
 				# Doesn't match our network, reject
 				return
-			elif ieee.dst != 0xFFFF:
+			elif ieee.dst == 0xFFFF:
 				# broadcast, we'll process it
 				pass
 			elif ieee.dst == self.nwk or ieee.dst == self.mac:
 				# to us, check for an ack request
 				if ieee.ack_req:
-					self.tx_ack(ieee.seq)
+					self.ack(ieee.seq)
 			else:
 				# not a broadcast nor unicast to us
 				return
-			print(ieee)
+
+			#print("RX: " + str(ieee))
+			print("RX: " + str(Parser.parse(data)[0]))
+
+			# check for duplicates
+			if ieee.src is int and ieee.src in self.seqs and self.seqs[ieee.src] == ieee.seq:
+				return
+
 		except Exception as e:
-			print("IEEE error: " + str(hexlify(data)) + ": " + str(e))
+			print("IEEE error: " + str(hexlify(data)))
+			raise
 			return
 
 		if ieee.frame_type == IEEE802154.FRAME_TYPE_CMD:
@@ -72,55 +92,76 @@ class IEEEDevice:
 
 
 	def tick(self):
+		now = ticks_us()
+
+		if self.pending_data \
+		and now - self.last_data_request > self.data_request_timeout \
+		and self.pending_seq is None:
+			self.data_request()
+			self.last_data_request = now
+
 		if self.pending_seq is None:
 			return
+
 		if self.retries == 0:
 			# todo: log that the transmit failed to ever be acked
 			self.pending_seq = None
+			self.tx_fail += 1
 			return
 
-		now = ticks_us()
-		if now - self.last_tx < self.retry_timer:
-			return
-
-		self.last_tx = now
-		self.raw_tx(self.last_pkt)
-		self.retries -= 1
+		if now - self.last_tx > self.retransmit_timeout:
+			print("RETX %02x %d" % (self.pending_seq, self.retries))
+			self.last_tx = now
+			self.tx_raw(self.last_pkt)
+			self.retries -= 1
 
 	# Send an ACK for a sequence number, indicating that it has
 	# been received by this device (but nothing else about it)
 	# todo: perhaps this should be fast tracked
-	def tx_ack(self, ack_seq):
-		self.raw_tx(IEEE802154.IEEE802154(
+	def ack(self, ack_seq):
+		self.tx_raw(IEEE802154.IEEE802154(
 			frame_type	= IEEE802154.FRAME_TYPE_ACK,
 			seq		= ack_seq,
+		).serialize())
+		print("ACKING %02x" % (ack_seq))
+
+	# Send a data request to say "yo we're ready for stuff"
+	def data_request(self):
+		self.tx_ieee(IEEE802154.IEEE802154(
+			frame_type	= IEEE802154.FRAME_TYPE_CMD,
+			command		= IEEE802154.COMMAND_DATA_REQUEST,
+			dst		= self.router,
+			dst_pan		= self.pan,
+			src		= self.nwk if self.nwk is not None else self.mac,
+			src_pan		= self.pan,
+			ack_req		= True,
 		))
 
 	# Send a packet from the upper layer, wrapping it with the
 	# IEEE 802.15.4 header, setting the flags as requested
 	def tx(self, payload, dst = None, ack_req = False, long_addr = False):
-		pkt = IEEE802154.IEEE802154(
+		self.tx_ieee(IEEE802154.IEEE802154(
 			frame_type	= IEEE802154.FRAME_TYPE_DATA,
 			dst		= dst,
 			src		= self.mac if long_addr else self.nwk,
 			pan		= self.pan,
 			ack_req		= ack_req,
-			seq		= self.seq,
 			payload		= payload,
-		)
-
-		self.tx_ieee(pkt)
+		))
 
 	def tx_ieee(self, pkt):
-		self.last_pkt = pkt.serialize()
-		self.raw_tx(self.last_pkt)
+		pkt.seq = self.seq
+		self.seq = (self.seq + 1) & 0x3F
 
-		self.seq = (pkt.seq + 1) & 0x3F
+		#print("SENDING %02x" % (pkt.seq))
+		self.last_pkt = pkt.serialize()
+		print("TX: " + str(Parser.parse(self.last_pkt)[0]))
+		self.tx_raw(self.last_pkt)
 
 		if pkt.ack_req:
 			self.last_tx = ticks_us()
 			self.pending_seq = pkt.seq
-			self.retries = 0
+			self.retries = 3
 		else:
 			self.pending_seq = None
 
@@ -129,13 +170,16 @@ class IEEEDevice:
 		self.tx_ieee(IEEE802154.IEEE802154(
 			frame_type	= IEEE802154.FRAME_TYPE_CMD,
 			command		= IEEE802154.COMMAND_JOIN_REQUEST,
+			ack_req		= 1,
 			seq		= self.seq,
 			src		= self.mac,
 			src_pan		= 0xFFFF, # not yet part of the PAN
-			dst		= 0x0000, # coordinator
+			dst		= self.router,
 			dst_pan		= self.pan,
 			payload		= payload, # b'\x80' = Battery powered, please allocate address
 		))
+		self.pending_data = True
+		self.join_failed = False
 
 	# Send a beacon request
 	def beacon(self):
@@ -153,11 +197,12 @@ class IEEEDevice:
 	# if we have a pending ACK for this sequence number, flag it as received
 	def handle_ack(self, ieee):
 		if ieee.seq == self.pending_seq:
+			print("RX ACK %02x" % (ieee.seq))
 			self.pending_seq = None
 
 	# process a IEEE802154 command message to us
 	def handle_command(self, ieee):
-		if ieee.command == COMMAND_JOIN_RESPONSE:
+		if ieee.command == IEEE802154.COMMAND_JOIN_RESPONSE:
 			(new_nwk, status) = unpack("<HB", ieee.payload)
 			if status == 0:
 				print("NEW NWK: %04x" % (new_nwk))
@@ -165,6 +210,11 @@ class IEEEDevice:
 			else:
 				# throw an error?
 				print("JOIN ERROR: %d" % (status))
+				self.join_failed = True
+			return
+
+		elif ieee.command == IEEE802154.COMMAND_JOIN_REQUEST:
+			# not our problem.
 			return
 
 		# other commands (data request, etc) are ignored
@@ -172,9 +222,13 @@ class IEEEDevice:
 
 	# process an IEEE802154 beacon, update our PAN if we don't have one
 	def handle_beacon(self, ieee):
-		if self.pan is None:
-			print("NEW PAN: %04x" % (ieee.src_pan))
-			self.pan = ieee.src_pan
+		print("BCN %04x:%04x: %02x%02x" % (ieee.src_pan, ieee.src, ieee.payload[1], ieee.payload[0]))
+		if self.router is None and ieee.payload[1] & 0x80 and ieee.src != 0x0000:
+			print("NEW ROUTER: %04x" % (ieee.src))
+			self.router = ieee.src
+			if self.pan is None:
+				print("NEW PAN: %04x" % (ieee.src_pan))
+				self.pan = ieee.src_pan
 
 class NetworkDevice:
 	# This is the "well known" zigbee2mqtt key.

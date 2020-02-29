@@ -21,14 +21,14 @@ from sys import stdout, stderr
 
 device = "/dev/ttyACM0"
 speed = 115200
-dev = serial.Serial(device, speed, timeout=0.1)
+serial_dev = serial.Serial(device, speed, timeout=0.1)
 
 # send the commands to reboot and load the NIC firmware
-dev.write(b"\x03\x03\x03")
+serial_dev.write(b"\x03\x03\x03")
 time.sleep(0.2)
-dev.write(b"reset()\r") # why \r?
+serial_dev.write(b"reset()\r") # why \r?
 time.sleep(0.5)
-dev.write(b"import NIC\r")
+serial_dev.write(b"import NIC\r")
 
 #stderr.write(b"reset\n")
 
@@ -43,7 +43,7 @@ def process_line(line):
 line = b''
 def process_serial():
 	global line
-	c = dev.read(1)
+	c = serial_dev.read(1)
 	if c is None:
 		return
 	if c == b'\r':
@@ -69,15 +69,35 @@ def process_serial():
 last_status = 0
 
 zbdev = Device.IEEEDevice(
-	tx = lambda b: device.write(hexlify(b) + b"\n"),
-	mac = b'12345678',
+	tx = lambda b: serial_dev.write(hexlify(b) + b"\n"),
+	mac = b'abcdef00',
 )
 
 
-while True:
-	now = time.time()
-	if now - last_status > 0.5:
-		print(now)
-		last_status = now
+boot_time = time.time()
+last_join = None
 
+while not zbdev.join_failed:
 	zbdev.rx(process_serial())
+
+	if zbdev.tx_fail != 0:
+		print("\n\n\n!!!!! TX FAIL")
+		zbdev.tx_fail = 0
+
+	now = time.time()
+	if now - last_status < 0.5:
+		continue
+
+	print(now)
+	last_status = now
+
+	if now - boot_time > 2 and zbdev.pan is None:
+		print("---- BEACON REQUEST ----")
+		zbdev.beacon()
+		last_join = now
+	elif last_join and now - last_join > 2 and zbdev.pan is not None and zbdev.nwk is None and zbdev.pending_seq is None:
+		print("\n\n\n---- JOIN REQUEST ----")
+		zbdev.join()
+		last_join = now
+
+
