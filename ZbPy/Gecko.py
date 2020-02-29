@@ -166,26 +166,26 @@ def discover_pan():
 def leave():
 	global seq
 	tx(IEEE802154.IEEE802154(
-		frame_type=IEEE802154.FRAME_TYPE_DATA,
-		seq=seq,
-		dst=0x0000,
-		dst_pan=pan,
-		src=nwk_addr,
-		payload=ZigbeeNetwork.ZigbeeNetwork(
-			aes=Parser.aes,
-			frame_type=ZigbeeNetwork.FRAME_TYPE_CMD,
-			version=2,
-			radius=1,
-			seq=12,
-			dst=0xfffd,
-			src=nwk_addr,
-			ext_src=mac_addr,
-			discover_route=0,
-			security=1,
-			sec_seq=bytearray(b'\x00\x00\x00\x00'),
-			sec_key=1,
-			sec_key_seq=0,
-			payload=bytearray(b'\x04\x00')
+		frame_type	= IEEE802154.FRAME_TYPE_DATA,
+		seq		= seq,
+		dst		= 0x0000,
+		dst_pan		= pan,
+		src		= nwk_addr,
+		payload		= ZigbeeNetwork.ZigbeeNetwork(
+			aes		= Parser.aes,
+			frame_type	= ZigbeeNetwork.FRAME_TYPE_CMD,
+			version		= 2,
+			radius		= 1,
+			seq		= 12,
+			dst		= 0xfffd,
+			src		= nwk_addr,
+			ext_src		= mac_addr,
+			discover_route	= 0,
+			security	= 1,
+			sec_key		= 1,
+			sec_key_seq	= 0,
+			sec_seq		= bytearray(b'\x00\x00\x00\x00'),
+			payload		= bytearray(b'\x04\x00')
 		),
 	))
 	seq += 1
