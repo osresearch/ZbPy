@@ -18,9 +18,9 @@ def decrypt(auth, message, mic, nonce, aes, validate=True):
 	l_a = len(auth)
 
 	if l_M != 4:
-		raise("MIC must be 4 bytes")
+		raise ValueError("MIC must be 4 bytes")
 	if len(nonce) != 16:
-		raise("Nonce must be 16 bytes")
+		raise ValueError("Nonce must be 16 bytes")
 
 	# decrypt the MIC block in place if there is a MIC
 	if validate:
@@ -97,7 +97,7 @@ def encrypt(auth, message, nonce, aes):
 	l_a = len(auth)
 
 	if len(nonce) != 16:
-		raise("Nonce must be 16 bytes")
+		raise ValueError("Nonce must be 16 bytes")
 
 	# Generate the first cipher block B0
 	# and run in CBC mode to compute the MIC
