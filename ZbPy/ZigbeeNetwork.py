@@ -16,6 +16,8 @@ FRAME_TYPE_CMD = 1
 FRAME_TYPE_RESERVED = 2
 FRAME_TYPE_PAN = 3
 
+DEST_BROADCAST = 0xFFFD
+
 from ZbPy import CCM
 
 class ZigbeeNetwork:
@@ -148,6 +150,7 @@ class ZigbeeNetwork:
 				self.ccm_decrypt(b, j)
 			except:
 				print("---- BAD CCM ----")
+				raise
 				self.valid = False
 				self.payload = b[j:]
 		return self
