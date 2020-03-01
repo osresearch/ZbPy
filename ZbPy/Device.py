@@ -25,11 +25,10 @@ class IEEEDevice:
 	data_request_timeout = 1000000 # usec == 100 ms
 	retransmit_timeout = 1000000 # usec == 100 ms
 
-	def __init__(self, tx, mac, nwk = None, pan = None, router = None):
+	# addr is [mac, nwk, pan]
+	def __init__(self, tx, addr, router = None):
 		self.tx_raw = tx
-		self.nwk = nwk
-		self.mac = mac
-		self.pan = pan
+		self.addr = addr
 		self.router = router
 		self.seq = 0
 		self.pending_seq = None
@@ -55,13 +54,13 @@ class IEEEDevice:
 			elif ieee.frame_type == IEEE802154.FRAME_TYPE_BEACON:
 				# Need to process before our PAN is defined
 				return self.handle_beacon(ieee)
-			elif ieee.dst_pan != self.pan:
+			elif ieee.dst_pan != self.addr[2]:
 				# Doesn't match our network, reject
 				return
 			elif ieee.dst == 0xFFFF:
 				# broadcast, we'll process it
 				pass
-			elif ieee.dst == self.nwk or ieee.dst == self.mac:
+			elif ieee.dst == self.addr[1] or ieee.dst == self.addr[0]:
 				# to us, check for an ack request
 				if ieee.ack_req:
 					self.ack(ieee.seq)
@@ -131,9 +130,9 @@ class IEEEDevice:
 			frame_type	= IEEE802154.FRAME_TYPE_CMD,
 			command		= IEEE802154.COMMAND_DATA_REQUEST,
 			dst		= self.router,
-			dst_pan		= self.pan,
-			src		= self.nwk if self.nwk is not None else self.mac,
-			src_pan		= self.pan,
+			dst_pan		= self.addr[2],
+			src		= self.addr[1] if self.addr[1] is not None else self.addr[0],
+			src_pan		= self.addr[2],
 			ack_req		= True,
 		))
 
@@ -143,8 +142,8 @@ class IEEEDevice:
 		self.tx_ieee(IEEE802154.IEEE802154(
 			frame_type	= IEEE802154.FRAME_TYPE_DATA,
 			dst		= dst,
-			src		= self.mac if long_addr else self.nwk,
-			pan		= self.pan,
+			src		= self.addr[0] if long_addr else self.addr[1],
+			pan		= self.addr[2],
 			ack_req		= ack_req,
 			payload		= payload,
 		))
@@ -172,10 +171,10 @@ class IEEEDevice:
 			command		= IEEE802154.COMMAND_JOIN_REQUEST,
 			ack_req		= 1,
 			seq		= self.seq,
-			src		= self.mac,
+			src		= self.addr[0],
 			src_pan		= 0xFFFF, # not yet part of the PAN
 			dst		= self.router,
-			dst_pan		= self.pan,
+			dst_pan		= self.addr[2],
 			payload		= payload, # b'\x80' = Battery powered, please allocate address
 		))
 		self.pending_data = True
@@ -203,10 +202,13 @@ class IEEEDevice:
 	# process a IEEE802154 command message to us
 	def handle_command(self, ieee):
 		if ieee.command == IEEE802154.COMMAND_JOIN_RESPONSE:
+			if not self.pending_data:
+				return
+			self.pending_data = False
 			(new_nwk, status) = unpack("<HB", ieee.payload)
 			if status == 0:
 				print("NEW NWK: %04x" % (new_nwk))
-				self.nwk = new_nwk
+				self.addr[1] = new_nwk
 			else:
 				# throw an error?
 				print("JOIN ERROR: %d" % (status))
@@ -226,9 +228,9 @@ class IEEEDevice:
 		if self.router is None and ieee.payload[1] & 0x80 and ieee.src != 0x0000:
 			print("NEW ROUTER: %04x" % (ieee.src))
 			self.router = ieee.src
-			if self.pan is None:
+			if self.addr[2] is None:
 				print("NEW PAN: %04x" % (ieee.src_pan))
-				self.pan = ieee.src_pan
+				self.addr[2] = ieee.src_pan
 
 class NetworkDevice:
 	# This is the "well known" zigbee2mqtt key.
@@ -237,13 +239,12 @@ class NetworkDevice:
 	nwk_key = unhexlify(b"01030507090b0d0f00020406080a0c0d")
 	aes = AES.AES(nwk_key)
 
-	# The NWK and MAC are to be set by the outside
+	# The addr is [mac, nwk, pan] and are set by outside processes
 
-	def __init__(self, tx, seq=0, nwk=None, mac=None):
+	def __init__(self, tx, addr, seq = 0):
 		self.tx_packet = tx
 		self.handler = lambda x: None
-		self.nwk = nwk
-		self.mac = mac
+		self.addr = addr
 		self.seq = 0 # this is the 8-bit sequence and wraps quickly
 		self.sec_seq = seq # should be read from a config file and be always incrementing
 
@@ -281,8 +282,8 @@ class NetworkDevice:
 			radius		= 1,
 			seq		= self.seq,
 			dst		= dst, # 0xfffd for broadcast,
-			src		= self.nwk,
-			ext_src		= self.mac,
+			src		= self.addr[1],
+			ext_src		= self.addr[0],
 			discover_route	= 0,
 			security	= security,
 			sec_key		= 1,

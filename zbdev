@@ -68,9 +68,15 @@ def process_serial():
 
 last_status = 0
 
+addr = [
+	b'abcdef00',	# mac
+	None,		# nwk
+	None,		# pan
+]
+
 zbdev = Device.IEEEDevice(
 	tx = lambda b: serial_dev.write(hexlify(b) + b"\n"),
-	mac = b'abcdef00',
+	addr = addr,
 )
 
 
@@ -91,11 +97,13 @@ while not zbdev.join_failed:
 	print(now)
 	last_status = now
 
-	if now - boot_time > 2 and zbdev.pan is None:
+	if now - boot_time > 2 and addr[2] is None:
+		# no PAN set: send a beacon request
 		print("---- BEACON REQUEST ----")
 		zbdev.beacon()
 		last_join = now
-	elif last_join and now - last_join > 2 and zbdev.pan is not None and zbdev.nwk is None and zbdev.pending_seq is None:
+	elif last_join and now - last_join > 2 and addr[2] is not None and addr[1] is None and zbdev.pending_seq is None:
+		# PAN is set, but not NWK: send a join request
 		print("\n\n\n---- JOIN REQUEST ----")
 		zbdev.join()
 		last_join = now
