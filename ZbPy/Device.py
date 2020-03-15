@@ -58,7 +58,7 @@ class IEEEDevice:
 				# Doesn't match our network, reject
 				return
 			elif ieee.dst == 0xFFFF:
-				# broadcast, we'll process it
+				# broadcast, we'll process it later
 				pass
 			elif ieee.dst == self.addr[1] or ieee.dst == self.addr[0]:
 				# to us, check for an ack request
@@ -69,11 +69,15 @@ class IEEEDevice:
 				return
 
 			#print("RX: " + str(ieee))
-			print("RX: " + str(Parser.parse(data)[0]))
 
 			# check for duplicates
-			if ieee.src is int and ieee.src in self.seqs and self.seqs[ieee.src] == ieee.seq:
-				return
+			if type(ieee.src) is int:
+				if ieee.src in self.seqs \
+				and self.seqs[ieee.src] == ieee.seq:
+					return
+				self.seqs[ieee.src] = ieee.seq
+
+			print("RX: " + str(Parser.parse(data)[0]))
 
 		except Exception as e:
 			print("IEEE error: " + str(hexlify(data)))
@@ -122,7 +126,7 @@ class IEEEDevice:
 			frame_type	= IEEE802154.FRAME_TYPE_ACK,
 			seq		= ack_seq,
 		).serialize())
-		print("ACKING %02x" % (ack_seq))
+		#print("ACKING %02x" % (ack_seq))
 
 	# Send a data request to say "yo we're ready for stuff"
 	def data_request(self):
@@ -143,7 +147,7 @@ class IEEEDevice:
 			frame_type	= IEEE802154.FRAME_TYPE_DATA,
 			dst		= dst,
 			src		= self.addr[0] if long_addr else self.addr[1],
-			pan		= self.addr[2],
+			src_pan		= self.addr[2],
 			ack_req		= ack_req,
 			payload		= payload,
 		))
@@ -154,7 +158,8 @@ class IEEEDevice:
 
 		#print("SENDING %02x" % (pkt.seq))
 		self.last_pkt = pkt.serialize()
-		print("TX: " + str(Parser.parse(self.last_pkt)[0]))
+		if pkt.command != IEEE802154.COMMAND_DATA_REQUEST:
+			print("TX: " + str(Parser.parse(self.last_pkt)[0]))
 		self.tx_raw(self.last_pkt)
 
 		if pkt.ack_req:
@@ -196,7 +201,7 @@ class IEEEDevice:
 	# if we have a pending ACK for this sequence number, flag it as received
 	def handle_ack(self, ieee):
 		if ieee.seq == self.pending_seq:
-			print("RX ACK %02x" % (ieee.seq))
+			#print("RX ACK %02x" % (ieee.seq))
 			self.pending_seq = None
 
 	# process a IEEE802154 command message to us
@@ -225,12 +230,12 @@ class IEEEDevice:
 	# process an IEEE802154 beacon, update our PAN if we don't have one
 	def handle_beacon(self, ieee):
 		print("BCN %04x:%04x: %02x%02x" % (ieee.src_pan, ieee.src, ieee.payload[1], ieee.payload[0]))
-		if self.router is None and ieee.payload[1] & 0x80 and ieee.src != 0x0000:
-			print("NEW ROUTER: %04x" % (ieee.src))
+		if self.addr[2] is None \
+		and ieee.payload[1] & 0x80 \
+		and ieee.src != 0x0000:
+			print("NEW ROUTER: %04x.%04x" % (ieee.src_pan, ieee.src))
 			self.router = ieee.src
-			if self.addr[2] is None:
-				print("NEW PAN: %04x" % (ieee.src_pan))
-				self.addr[2] = ieee.src_pan
+			self.addr[2] = ieee.src_pan
 
 class NetworkDevice:
 	# This is the "well known" zigbee2mqtt key.
@@ -249,12 +254,12 @@ class NetworkDevice:
 		self.sec_seq = seq # should be read from a config file and be always incrementing
 
 		# Track the sequence numbers from other hosts
-		self.seq_seen = {}
+		self.seqs = {}
 
 	# called by the IEEE device when a new network packet has arrived
 	def rx(self, data):
 		try:
-			nwk = ZigbeeNetwork.ZigbeeNetwork(data=data, aes=aes)
+			nwk = ZigbeeNetwork.ZigbeeNetwork(data=data, aes=self.aes)
 			# filter any dupes from this source
 			if nwk.src in self.seqs and self.seqs[nwk.src] == nwk.seq:
 				return
@@ -268,7 +273,7 @@ class NetworkDevice:
 		if nwk.frame_type == ZigbeeNetwork.FRAME_TYPE_CMD:
 			# what to do with these?
 			# route record, etc
-			pass
+			self.handle_command(nwk)
 		elif nwk.frame_type == ZigbeeNetwork.FRAME_TYPE_DATA:
 			# pass it up the stack
 			return self.handler(nwk.payload)
@@ -290,16 +295,40 @@ class NetworkDevice:
 			sec_key_seq	= 0,
 			sec_seq		= pack("<I", self.sec_seq),
 			payload		= payload,
-		))
+		).serialize())
 
 		self.seq = (self.seq + 1) & 0x3F
 
 		if enc:
 			self.sec_seq += 1
 
+	# Send a NWK level leave packet
 	def leave(self):
 		self.tx(
 			dst		= ZigbeeNetwork.DEST_BROADCAST,
 			frame_type	= ZigbeeNetwork.FRAME_TYPE_CMD,
 			payload		= bytearray(b'\x04\x00'),
 		)
+
+	def handle_command(self, pkt):
+		cmd = pkt.payload[0]
+		if cmd == 0x04: # leave
+			print("NWK command: LEAVE %02x" % (pkt.payload[1]))
+			#self.leave()
+			self.addr[1] = None  # remove our NWK
+			self.addr[2] = None  # remove our PAN
+		else:
+			print("NWK command %02x:" % (cmd), hexlify(pkt.payload))
+
+try:
+	import Radio
+
+	addr = [ Radio.mac(), None, None ]
+	dev = IEEEDevice(tx=Radio.tx, addr=addr)
+	def loop():
+		while True:
+			dev.rx(Radio.rx())
+		
+except:
+	# couldn't setup a device
+	pass

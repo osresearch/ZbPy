@@ -28,6 +28,8 @@ serial_dev.write(b"\x03\x03\x03")
 time.sleep(0.2)
 serial_dev.write(b"reset()\r") # why \r?
 time.sleep(0.5)
+serial_dev.write(b"import Radio; Radio.promiscuous(True)\r")
+time.sleep(0.5)
 serial_dev.write(b"import NIC\r")
 
 #stderr.write(b"reset\n")
@@ -69,7 +71,8 @@ def process_serial():
 last_status = 0
 
 addr = [
-	b'abcdef00',	# mac
+	#b'abcdef02',	# mac
+	b'X\xdf>\xfe\xffW\xb4\x14',	# mac
 	None,		# nwk
 	None,		# pan
 ]
@@ -79,9 +82,18 @@ zbdev = Device.IEEEDevice(
 	addr = addr,
 )
 
+nwkdev = Device.NetworkDevice(
+	addr = addr,
+	tx = zbdev.tx,
+)
+
+zbdev.handler = nwkdev.rx
+
 
 boot_time = time.time()
-last_join = None
+last_beacon = 0
+last_join = 0
+last_req = 0
 
 while not zbdev.join_failed:
 	zbdev.rx(process_serial())
@@ -91,21 +103,26 @@ while not zbdev.join_failed:
 		zbdev.tx_fail = 0
 
 	now = time.time()
-	if now - last_status < 0.5:
-		continue
+	if now - last_status > 1.0:
+		last_status = now
+		print(now)
 
-	print(now)
-	last_status = now
-
-	if now - boot_time > 2 and addr[2] is None:
+	if addr[2] is None:
 		# no PAN set: send a beacon request
-		print("---- BEACON REQUEST ----")
-		zbdev.beacon()
-		last_join = now
-	elif last_join and now - last_join > 2 and addr[2] is not None and addr[1] is None and zbdev.pending_seq is None:
+		if now - last_beacon > 0.5 and zbdev.pending_seq is None:
+			print("---- BEACON REQUEST ----")
+			zbdev.beacon()
+			last_beacon = now
+	elif addr[1] is None:
 		# PAN is set, but not NWK: send a join request
-		print("\n\n\n---- JOIN REQUEST ----")
-		zbdev.join()
-		last_join = now
+		if now - last_join > 0.5 and zbdev.pending_seq is None:
+			print("\n\n\n---- JOIN REQUEST ----")
+			zbdev.join()
+			last_join = now
+	else:
+		# NWK is now set; send a data reques to keep the party going
+		if now - last_req > 0.5 and zbdev.pending_seq is None:
+			zbdev.data_request()
+			last_req = now
 
 
