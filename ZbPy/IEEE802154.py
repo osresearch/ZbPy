@@ -208,3 +208,7 @@ class IEEE802154:
 			params.append("payload=" + str(self.payload))
 
 		return "IEEE802154(" + ", ".join(params) + ")"
+
+
+def parse(pkt):
+	return IEEE802154(data=pkt)
