@@ -45,3 +45,20 @@ Perhaps parts of [ZigPy](https://github.com/zigpy/zigpy) can be
 ported to MicroPython to provide these mappings.
 
 
+# Debugging Zigbee
+
+It is easiest to use `zbsniff` in this tree, talking to an
+Ikea device on `/dev/ttyACM0`, which will output a PCAP file
+on stdout.  You can pipe this to `wireshark` to trace what
+is going on:
+
+```
+zbsniff | wireshark -k -i -
+```
+
+However, there is lots of "noise" in the Zigbee protocol
+with repeat messages, acks, etc that make the wireshark
+display messy.
+
+Don't display acks: `!(wpan.frame_type == 0x2)`
+Don't display repeats: `(!(wpan.frame_type == 0x1) || wpan.src16 == zbee_nwk.src)`

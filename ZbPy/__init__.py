@@ -1,4 +1,6 @@
 from ZbPy import IEEE802154
+from binascii import hexlify, unhexlify
+
 try:
 	import Radio
 	Radio.pan(0x1a62)

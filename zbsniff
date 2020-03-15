@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+# zbsniff turns stdin into pcap files
+# the local interface should be running the NIC.py firmware so that
+# it is hexdumping the raw packets that are being received
+
+import os
+import sys
+import serial
+import threading
+import readline
+import time
+from select import select
+from binascii import unhexlify, hexlify
+from struct import pack
+#from ZbPy import Parser
+
+# re-open stdout as binary
+#stdout = os.fdopen(sys.stdout.fileno(), "wb")
+#stderr = os.fdopen(sys.stderr.fileno(), "wb")
+from sys import stdout, stderr
+
+device = "/dev/ttyACM0"
+speed = 115200
+dev = serial.Serial(device, speed)
+
+# send the commands to reboot and load the NIC firmware
+dev.write(b"\x03\x03\x03")
+time.sleep(0.2)
+dev.write(b"reset()\r") # why \r?
+time.sleep(0.5)
+dev.write(b"import NIC\r")
+
+#stderr.write(b"reset\n")
+
+# and output the pcap header https://wiki.wireshark.org/Development/LibpcapFileFormat
+"""
+typedef struct pcap_hdr_s {
+        guint32 magic_number;   /* magic number 0xa1b2c3d4 */
+        guint16 version_major;  /* major version number */
+        guint16 version_minor;  /* minor version number */
+        gint32  thiszone;       /* GMT to local correction */
+        guint32 sigfigs;        /* accuracy of timestamps */
+        guint32 snaplen;        /* max length of captured packets, in octets */
+        guint32 network;        /* data link type LINKTYPE_IEEE802_15_4_NOFCS	230 */
+} pcap_hdr_t;
+
+typedef struct pcaprec_hdr_s {
+        guint32 ts_sec;         /* timestamp seconds */
+        guint32 ts_usec;        /* timestamp microseconds */
+        guint32 incl_len;       /* number of octets of packet saved in file */
+        guint32 orig_len;       /* actual length of packet */
+} pcaprec_hdr_t;
+"""
+stdout.buffer.write(pack("<IHHiIII",
+	0xa1b2c3d4,	# magic
+	2, 4,		# version 2.4
+	0,		# timezone is gmt
+	0,		# sigfigs
+	256,		# these are short packets
+	230,		# LINKTYPE_IEEE802_15_4_NOFCS
+))
+stdout.flush()
+
+def process_line(line):	
+	pkt = unhexlify(line)
+	seconds = time.time()
+	microseconds = (seconds * 1e6) % 1e6
+
+	stdout.buffer.write(pack("<IIII",
+		int(seconds),
+		int(microseconds),
+		len(pkt),
+		len(pkt)
+	) + pkt)
+	stdout.flush()
+
+line = b''
+def process_serial():
+	global line
+	c = dev.read(1)
+	if c is None:
+		return
+	if c == b'\r':
+		return
+
+	#stderr.write(c)
+
+	if (b'0' <= c and c <= b'9') \
+	or (b'a' <= c and c <= b'f'):
+		line += c
+		return
+
+	if c == b'\n' and line != b'':
+		process_line(line)
+
+	# either a line was processed, or a non-hex char
+	# was received, in either case restart the line
+	line = b''
+
+while True:
+	process_serial()
