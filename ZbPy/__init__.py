@@ -1,91 +1,59 @@
-# Top level interface to the ZbPy Zigbee stack for
-# the EFM32 micropython port.
+from ZbPy import IEEE802154
 try:
 	import Radio
-	import machine
-	from ubinascii import hexlify, unhexlify
-	from ZbPy import Parser, ZCL
-
-	Radio.init()
-	Radio.promiscuous(True)
-	machine.zrepl(False)
+	Radio.pan(0x1a62)
 except:
-	print("ZbPy failed to import")
+	print("import Radio failed")
 
-def sniff():
+seq = 99
+
+def beacon(tx=Radio.tx):
+	global seq
+	seq = (seq + 1) & 0x1F
+
+	tx(IEEE802154.IEEE802154(
+		frame_type = IEEE802154.FRAME_TYPE_CMD,
+		command = IEEE802154.COMMAND_BEACON_REQUEST,
+		seq = seq,
+		dst = 0xFFFF,
+		dst_pan = 0xFFFF,
+	).serialize())
+
+def data(tx=Radio.tx, pan=Radio.pan(), dst=0x0000, src=Radio.mac()):
+	global seq
+	seq = (seq + 1) & 0x1F
+
+	tx(IEEE802154.IEEE802154(
+		frame_type = IEEE802154.FRAME_TYPE_CMD,
+		command = IEEE802154.COMMAND_DATA_REQUEST,
+		seq = seq,
+		dst = dst,
+		dst_pan = pan,
+		src = src,
+		src_pan = pan,
+		ack_req = True,
+	).serialize())
+
+def join(tx=Radio.tx, pan=Radio.pan(), dst=0x0000, mac = Radio.mac()):
+	global seq
+	seq = (seq + 1) & 0x1F
+
+	tx(IEEE802154.IEEE802154(
+		frame_type = IEEE802154.FRAME_TYPE_CMD,
+		command = IEEE802154.COMMAND_JOIN_REQUEST,
+		seq = seq,
+		src = mac,
+		src_pan = pan, #0xFFFF,
+		dst = dst,
+		dst_pan = pan,
+		ack_req = True,
+		payload = b'\x80',
+	).serialize())
+
+def sniff(rx=Radio.rx):
 	while True:
-		pkt = Radio.rx()
+		pkt = rx()
 		if pkt is None:
 			continue
-		# throw away the extra b' and ' on the string
-		# representation
-		x = repr(hexlify(pkt))[2:-1]
-		print(x)
-
-def parse(verbose=False):
-	while True:
-		pkt = Radio.rx()
-		if pkt is None:
-			continue
-		ieee, typ = Parser.parse(pkt, filter_dupes=True)
-		if typ is None:
-			continue
-
-		if typ != "zcl":
-			if typ == "zcl?" and ieee.payload.payload.cluster != 0:
-				print(ieee)
-			continue
-
-		if verbose:
-			print(ieee)
-		#cluster = ieee.payload.payload.cluster
-		# IEEE/NWK/APS/ZCL/ZCL
-		zb = ieee.payload.payload.payload
-		zcl = zb.payload
-		#print(ieee)
-
-		if verbose or zb.command != 0x0B:
-			print(zcl)
-
-
-handlers = {}
-
-def bind(name, handler):
-	global handlers;
-	cluster_id, command_id = ZCL.lookup(name)
-	if cluster_id not in handlers:
-		handlers[cluster_id] = {}
-	handlers[cluster_id][command_id] = handler
-
-def loop(verbose=False):
-	while True:
-		pkt = Radio.rx()
-		if pkt is None:
-			continue
-		try:
-			ieee, typ = Parser.parse(pkt, filter_dupes=True)
-			if typ != "zcl":
-				continue
-		except:
-			print(pkt)
-			continue
-
-		try:
-			cluster = ieee.payload.payload.cluster
-			#              NWK     APS     ZCL     ZCL
-			payload = ieee.payload.payload.payload.payload
-			command = payload.command
-
-			if verbose:
-				print(command)
-
-			if cluster not in handlers:
-				continue
-			if command not in handlers[cluster]:
-				continue
-
-			handlers[cluster][command](payload)
-		except:
-			print("Handler failed")
-			raise
-
+		print(IEEE802154.parse(pkt))
+	
