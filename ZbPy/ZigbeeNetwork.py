@@ -27,6 +27,8 @@ CMD_LINK_STATUS		= 0x08
 CMD_NETWORK_REPORT	= 0x09
 CMD_NETWORK_UPDATE	= 0x0a
 
+DEST_BROADCAST		= 0xFFFD
+
 from ZbPy import CCM
 
 class ZigbeeNetwork:
