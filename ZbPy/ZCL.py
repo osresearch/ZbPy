@@ -8,26 +8,26 @@
 import struct
 
 clusters = {
-0x00: {
+0x0000: {
 	'name': 'Basic',
 },
-0x01: {
+0x0001: {
 	'name': 'PowerConfig',
 },
-0x02: {
+0x0002: {
 	'name': 'DeviceTemp',
 },
-0x03: {
+0x0003: {
 	'name': 'Identify',
 },
-0x04: {
+0x0004: {
 	'name': 'Groups',
 },
-0x05: {
+0x0005: {
 	'name': 'Scenes',
 	0x0b: [ "DefaultResp", "!BB", ["id", "status"] ],
 },
-0x06: {
+0x0006: {
 	'name': 'OnOff',
 	0x00: [ "Off", "!", [] ],
 	0x01: [ "On", "!", [] ],
@@ -37,10 +37,10 @@ clusters = {
 	0x42: [ "OnWithTimedOff", "!Bhh", ["on", "time", "wait"] ],
 	0x0b: [ "DefaultResp", "!BB", ["id", "status"] ],
 },
-0x07: {
+0x0007: {
 	'name': 'OnOffConfig',
 },
-0x08: {
+0x0008: {
 	'name': 'LevelControl',
 	0x00: [ "MoveToLevel", "!Bh", [ "level", "time" ] ],
 	0x01: [ "Move", "!BB", [ "dir", "rate" ] ],
