@@ -61,12 +61,9 @@ def parse(data, verbose=False, filter_dupes=False):
 
 	if verbose: print(aps)
 
-	if aps.frame_type != ZigbeeApplication.FRAME_TYPE_DATA:
+	if aps.frame_type != ZigbeeApplication.FRAME_TYPE_DATA \
+	or aps.profile != ZigbeeApplication.PROFILE_HOME:
 		return ieee, "aps"
-
-	# join requests are "special" for now
-	if aps.cluster == 0x36:
-		return ieee, "join"
 
 	zcl.deserialize(aps.payload)
 	aps.payload = zcl

@@ -12,6 +12,9 @@ MODE_GROUP = 0x3
 FRAME_TYPE_DATA = 0x0
 FRAME_TYPE_ACK = 0x1
 
+PROFILE_DEVICE = 0x0000
+PROFILE_HOME = 0x0104
+
 class ZigbeeApplication:
 
 	# parse the ZigBee Application packet
