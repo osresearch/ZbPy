@@ -32,7 +32,9 @@ class IEEEDevice:
 		self.pending_seq = None
 		self.pending_data = None
 		self.handler = lambda x: None
+		self.joined = lambda x: None
 		self.seqs = {}
+		self.verbose = False
 
 		self.tx_fail = 0
 		self.last_data_request = 0
@@ -56,7 +58,8 @@ class IEEEDevice:
 
 				self.seqs[ieee.src] = ieee.seq
 
-			print("RX: " + str(Parser.parse(data)[0]))
+			if self.verbose:
+				print("RX: " + str(Parser.parse(data)[0]))
 
 		except Exception as e:
 			print("IEEE error: " + str(hexlify(data)))
@@ -74,6 +77,7 @@ class IEEEDevice:
 			return self.handler(ieee.payload)
 		else:
 			# should signal a wtf?
+			print("RX: " + str(Parser.parse(data)[0]))
 			pass
 
 
@@ -84,6 +88,8 @@ class IEEEDevice:
 
 		now = ticks_us()
 
+		# if we are hoping for more data, and we are not waiting for
+		# an ack, go ahead and send a data request
 		if self.pending_data \
 		and now - self.last_data_request > self.data_request_timeout \
 		and self.pending_seq is None:
@@ -160,6 +166,9 @@ class IEEEDevice:
 		self.seq = (self.seq + 1) & 0x3F
 
 		#print("SENDING %02x" % (pkt.seq))
+		if self.verbose:
+			print("TX: ", pkt)
+
 		self.last_pkt = pkt.serialize()
 		if pkt.command != IEEE802154.COMMAND_DATA_REQUEST:
 			print("TX: " + str(Parser.parse(self.last_pkt)[0]))
@@ -205,19 +214,23 @@ class IEEEDevice:
 	# if we have a pending ACK for this sequence number, flag it as received
 	def handle_ack(self, ieee):
 		if ieee.seq == self.pending_seq:
-			#print("RX ACK %02x" % (ieee.seq))
+			if self.verbose:
+				print("RX ACK %02x" % (ieee.seq))
 			self.pending_seq = None
+		else:
+			print("RX ACK %02x != expected %02x" % (ieee.seq, self.pending_seq))
 
 	# process a IEEE802154 command message to us
 	def handle_command(self, ieee):
 		if ieee.command == IEEE802154.COMMAND_JOIN_RESPONSE:
 			if not self.pending_data:
 				return
-			self.pending_data = False
+			#self.pending_data = False
 			(new_nwk, status) = unpack("<HB", ieee.payload)
 			if status == 0:
-				print("NEW NWK: %04x" % (new_nwk))
+				print("JOIN! new NWK: %04x" % (new_nwk))
 				self.radio.address(new_nwk)
+				self.joined(new_nwk)
 			else:
 				# throw an error?
 				print("JOIN ERROR: %d" % (status))
@@ -225,7 +238,11 @@ class IEEEDevice:
 			return
 
 		elif ieee.command == IEEE802154.COMMAND_JOIN_REQUEST:
-			# not our problem.
+			# not our problem (yet)
+			return
+
+		elif ieee.command == IEEE802154.COMMAND_DATA_REQUEST:
+			# as a device, we should be sending, not receiving these
 			return
 
 		# other commands (data request, etc) are ignored
@@ -242,6 +259,10 @@ class IEEEDevice:
 			self.router = ieee.src
 			self.radio.pan(ieee.src_pan)
 
+def aps_handler(data):
+    aps = ZigbeeApplication.ZigbeeApplication(data)
+    print(aps)
+
 class NetworkDevice:
 	# This is the "well known" zigbee2mqtt key.
 	# The Ikea gateway uses a different key that has to be learned
@@ -253,7 +274,8 @@ class NetworkDevice:
 
 	def __init__(self, dev, seq = 0):
 		self.dev = dev
-		self.handler = lambda x: None
+		self.handler = aps_handler
+		self.verbose = False # don't print chatter messages
 		self.seq = 0 # this is the 8-bit sequence and wraps quickly
 		self.sec_seq = seq # should be read from a config file and be always incrementing
 
@@ -269,11 +291,14 @@ class NetworkDevice:
 		try:
 			nwk = ZigbeeNetwork.ZigbeeNetwork(data=data, aes=self.aes)
 			# filter any dupes from this source
-			if nwk.src in self.seqs and self.seqs[nwk.src] == nwk.seq:
+			if nwk.src in self.seqs \
+                        and self.seqs[nwk.src] == nwk.seq:
 				return
 
 			self.seqs[nwk.src] = nwk.seq
-			print(nwk)
+			# don't print broadcast messages
+			if nwk.dst & 0xFFF0 != 0xFFF0:
+				print(nwk)
 		except:
 			print("NWK error: " + hexlify(data))
 			raise
@@ -285,6 +310,7 @@ class NetworkDevice:
 			self.handle_command(nwk)
 		elif nwk.frame_type == ZigbeeNetwork.FRAME_TYPE_DATA:
 			# pass it up the stack
+			print(nwk)
 			return self.handler(nwk.payload)
 		else:
 			print("NWK type %02x?" % (nwk.frame_type))
@@ -323,7 +349,6 @@ class NetworkDevice:
 
 	def handle_command(self, pkt):
 		cmd = pkt.payload[0]
-		print("---- CMD %02x ----" % (cmd))
 		if cmd == ZigbeeNetwork.CMD_LEAVE:
 			print("NWK %04x: LEAVE %02x" % (
 				pkt.src,
@@ -333,6 +358,8 @@ class NetworkDevice:
 			self.dev.radio.address(0xFFFF) # remove our NWK
 			self.dev.radio.pan(0xFFFF) # remove our PAN
 		elif cmd == ZigbeeNetwork.CMD_ROUTE_REQUEST:
+			if not self.verbose:
+				return
 			print("NWK %04x: Route request %02x: %02x%02x" % (
 				pkt.src,
 				pkt.payload[1],
@@ -340,6 +367,8 @@ class NetworkDevice:
 				pkt.payload[3],
 			))
 		elif cmd == ZigbeeNetwork.CMD_LINK_STATUS:
+			if not self.verbose:
+				return
 			count = pkt.payload[1] & 0x1f
 			offset = 2
 			print("NWK %04x: Links=[" % (pkt.src), end='')
@@ -350,6 +379,14 @@ class NetworkDevice:
 				), end='')
 				offset += 3
 			print(" ]")
+		elif cmd == ZigbeeNetwork.CMD_NETWORK_STATUS:
+			if not self.verbose:
+				return
+			print("NWK %04x: network status: " % (pkt.src), hexlify(pkt.payload[1:]))
+                elif cmd == ZigbeeNetwork.CMD_ROUTE_RECORD:
+			if not self.verbose:
+				return
+			print("NWK %04x: route record: " % (pkt.src), hexlify(pkt.payload[1:]))
 		else:
-			print("NWK command %02x:" % (cmd), hexlify(pkt.payload))
+			print("NWK %04x: CMD %02x:" % (pkt.src, cmd), hexlify(pkt.payload[1:]))
 
