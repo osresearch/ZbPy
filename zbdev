@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+# zbdev pretends to be a Zigbee device
+# the local interface should be running the NIC.py firmware so that
+# it is hexdumping the raw packets that are being received
+
+import os
+import sys
+import serial
+import threading
+import readline
+import time
+from select import select
+from binascii import unhexlify, hexlify
+from struct import pack
+from ZbPy import Device
+
+# re-open stdout as binary
+#stdout = os.fdopen(sys.stdout.fileno(), "wb")
+#stderr = os.fdopen(sys.stderr.fileno(), "wb")
+from sys import stdout, stderr
+
+device = "/dev/ttyACM0"
+speed = 115200
+serial_dev = serial.Serial(device, speed, timeout=0.1)
+
+# send the commands to reboot and load the NIC firmware
+serial_dev.write(b"\x03\x03\x03")
+time.sleep(0.2)
+serial_dev.write(b"reset()\r") # why \r?
+time.sleep(0.5)
+#serial_dev.write(b"import Radio; Radio.promiscuous(True)\r")
+serial_dev.write(b"import Radio\r")
+time.sleep(0.5)
+serial_dev.write(b"import NIC\r")
+
+#stderr.write(b"reset\n")
+
+def process_line(line):	
+	try:
+		data = bytearray(unhexlify(line))
+		return data
+	except Exception as e:
+		print(str(e) + ": " + str(line))
+		return None
+
+line = b''
+def process_serial():
+	global line
+	c = serial_dev.read(1)
+	if c is None:
+		return
+	if c == b'\r':
+		return
+
+	#stderr.write(c)
+
+	if (b'0' <= c and c <= b'9') \
+	or (b'a' <= c and c <= b'f'):
+		line += c
+		return
+
+	if c == b'\n' and line != b'':
+		pkt = process_line(line)
+		line = b''
+		return pkt
+
+	# either a line was processed, or a non-hex char
+	# was received, in either case restart the line
+	line = b''
+	return
+
+last_status = 0
+
+addr = [
+	#b'abcdef02',	# mac
+	b'X\xdf>\xfe\xffW\xb4\x14',	# mac
+	None,		# nwk
+	0x1a62,		# pan
+]
+
+zbdev = Device.IEEEDevice(
+	tx = lambda b: serial_dev.write(hexlify(b) + b"\n"),
+	addr = addr,
+)
+
+nwkdev = Device.NetworkDevice(
+	addr = addr,
+	tx = zbdev.tx,
+)
+
+zbdev.handler = nwkdev.rx
+
+
+boot_time = time.time()
+last_beacon = 0
+last_join = 0
+last_req = 0
+
+while not zbdev.join_failed:
+	zbdev.rx(process_serial())
+
+	if zbdev.tx_fail != 0:
+		print("\n\n\n!!!!! TX FAIL")
+		zbdev.tx_fail = 0
+
+	now = time.time()
+	if now - last_status > 1.0:
+		last_status = now
+		print(now)
+
+	if addr[2] is None:
+		# no PAN set: send a beacon request
+		if now - last_beacon > 0.5 and zbdev.pending_seq is None:
+			print("---- BEACON REQUEST ----")
+			zbdev.beacon()
+			last_beacon = now
+	elif addr[1] is None:
+		# PAN is set, but not NWK: send a join request
+		if now - last_join > 0.5 and zbdev.pending_seq is None:
+			print("\n\n\n---- JOIN REQUEST ----")
+			zbdev.join()
+			last_join = now
+	else:
+		# NWK is now set; send a data reques to keep the party going
+		if now - last_req > 0.5 and zbdev.pending_seq is None:
+			zbdev.data_request()
+			last_req = now
+
+
