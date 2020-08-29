@@ -11,7 +11,7 @@ try:
 			return bytearray(self.aes.encrypt(bytes(plaintext)))
 
 		def decrypt(self, ciphertext):
-			return bytearray(self.aes.decrypt(bytes(plaintext)))
+			return bytearray(self.aes.decrypt(bytes(ciphertext)))
 
 except:
 	# Gecko AES wrapper in ECB mode.
