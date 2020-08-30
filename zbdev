@@ -13,6 +13,8 @@ from select import select
 from binascii import unhexlify, hexlify
 from struct import pack
 from ZbPy import Device
+from ZbPy import ZigbeeNetwork
+from ZbPy import ZigbeeApplication
 
 # re-open stdout as binary
 #stdout = os.fdopen(sys.stdout.fileno(), "wb")
@@ -21,26 +23,16 @@ from sys import stdout, stderr
 
 device = "/dev/ttyACM0"
 speed = 115200
+do_reset = False
 serial_dev = serial.Serial(device, speed, timeout=0.1)
-
-# send the commands to reboot and load the NIC firmware
-serial_dev.write(b"\x03\x03\x03")
-time.sleep(0.2)
-serial_dev.write(b"reset()\r") # why \r?
-time.sleep(0.5)
-#serial_dev.write(b"import Radio; Radio.promiscuous(True)\r")
-serial_dev.write(b"import Radio\r")
-time.sleep(0.5)
-serial_dev.write(b"import NIC\r")
-
-#stderr.write(b"reset\n")
 
 def process_line(line):	
 	try:
 		data = bytearray(unhexlify(line))
 		return data
 	except Exception as e:
-		print(str(e) + ": " + str(line))
+		#print(str(e) + ": " + str(line))
+		print("Read '" + str(line) + "'")
 		return None
 
 line = b''
@@ -52,10 +44,12 @@ def process_serial():
 	if c == b'\r':
 		return
 
+	print(str(c,"UTF-8"), end='')
 	#stderr.write(c)
 
-	if (b'0' <= c and c <= b'9') \
-	or (b'a' <= c and c <= b'f'):
+#	if (b'0' <= c and c <= b'9') \
+#	or (b'a' <= c and c <= b'f'):
+	if b'\n' != c:
 		line += c
 		return
 
@@ -69,35 +63,97 @@ def process_serial():
 	line = b''
 	return
 
+def wait_for(s):
+	l = ''
+	while True:
+		c = serial_dev.read(1)
+		if c is None:
+			continue
+
+		c = str(c, "UTF-8")
+		if '\r' == c:
+			continue
+
+		if '\n' == c:
+			print("Read '", l, "'")
+			l = ''
+			continue
+
+		l += c
+
+		if l == s:
+			print(l)
+			return
+
+# send the commands to reboot and load the NIC firmware
+serial_dev.write(b"\x03\x03\x03")
+time.sleep(0.2)
+wait_for(">>> ")
+if do_reset:
+	serial_dev.write(b"reset()\r") # why \r?
+	wait_for("MicroPython v")
+	wait_for(">>> ")
+serial_dev.write(b"import ZbPy.NIC\r")
+wait_for(">>> ")
+serial_dev.write(b"ZbPy.NIC.loop()\r")
+
+#stderr.write(b"reset\n")
+
+
 last_status = 0
 
 addr = [
-	#b'abcdef02',	# mac
-	b'X\xdf>\xfe\xffW\xb4\x14',	# mac
+	b'\x8co\xdb\xfe\xff\xd7k\x08', # mac
 	None,		# nwk
-	0x1a62,		# pan
+	None,		# pan
 ]
 
+# Mock the Radio with the serial NIC
+class Radio:
+	def __init__(self, serial_dev):
+		self.serial_dev = serial_dev
+	def tx(self, b):
+		s = hexlify(b)
+		print("TX: ", s)
+		s += b"\n"
+		# slow down the transmission a bit
+		for i in range(0,len(s),16):
+			self.serial_dev.write(s[i:i+16])
+			time.sleep(0.01)
+	def rx(self):
+		return process_serial()
+	def mac(self):
+		return addr[0]
+	def address(self,new_nwk=None):
+		if new_nwk is not None:
+			addr[1] = new_nwk
+		return addr[1]
+	def pan(self,new_pan=None):
+		if new_pan is not None:
+			addr[2] = new_pan
+		return addr[2]
+			
+
 zbdev = Device.IEEEDevice(
-	tx = lambda b: serial_dev.write(hexlify(b) + b"\n"),
-	addr = addr,
+	radio = Radio(serial_dev),
 )
 
 nwkdev = Device.NetworkDevice(
-	addr = addr,
-	tx = zbdev.tx,
+	dev = zbdev,
 )
 
-zbdev.handler = nwkdev.rx
+#zbdev.handler = nwkdev.rx
+nwkdev.verbose = True
 
 
 boot_time = time.time()
 last_beacon = 0
 last_join = 0
 last_req = 0
+announcement_sent = False
 
-while not zbdev.join_failed:
-	zbdev.rx(process_serial())
+while True:
+	zbdev.tick()
 
 	if zbdev.tx_fail != 0:
 		print("\n\n\n!!!!! TX FAIL")
@@ -109,21 +165,48 @@ while not zbdev.join_failed:
 		print(now)
 
 	if addr[2] is None:
-		# no PAN set: send a beacon request
-		if now - last_beacon > 0.5 and zbdev.pending_seq is None:
+		if now - last_beacon > 0.5 \
+		and zbdev.pending_seq is None:
+			# no PAN set: send a beacon request
 			print("---- BEACON REQUEST ----")
 			zbdev.beacon()
 			last_beacon = now
+
 	elif addr[1] is None:
-		# PAN is set, but not NWK: send a join request
-		if now - last_join > 0.5 and zbdev.pending_seq is None:
+		if now - last_join > 1.5 \
+		and zbdev.pending_seq is None:
+			# PAN is set, but not NWK: send a join request
 			print("\n\n\n---- JOIN REQUEST ----")
 			zbdev.join()
 			last_join = now
-	else:
-		# NWK is now set; send a data reques to keep the party going
-		if now - last_req > 0.5 and zbdev.pending_seq is None:
+
+	elif not announcement_sent \
+	and now - last_join > 3 \
+	and zbdev.pending_seq is None:
+		print("--- Device announcement ---")
+		announcement_sent = True
+		nwkdev.tx(ZigbeeNetwork.DEST_BROADCAST, ZigbeeApplication.ZigbeeApplication(
+			cluster = ZigbeeApplication.CLUSTER_DEVICE_ANNOUNCEMENT,
+			profile = ZigbeeApplication.PROFILE_DEVICE,
+			payload = bytes([
+				0x12,
+				(addr[1] >> 0) & 0xFF,
+				(addr[1] >> 8) & 0xFF,
+				addr[0][0],
+				addr[0][1],
+				addr[0][2],
+				addr[0][3],
+				addr[0][4],
+				addr[0][5],
+				addr[0][6],
+				addr[0][7],
+				0x80,
+			]),
+		))
+
+	elif now - last_req > 1.0 \
+	and zbdev.pending_seq is None:
+		# NWK is now set; send data requests to keep the party going
+			print("--- Data request ---")
 			zbdev.data_request()
 			last_req = now
-
-
