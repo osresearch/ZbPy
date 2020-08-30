@@ -254,14 +254,15 @@ class IEEEDevice:
 		print("BCN %04x:%04x: %02x%02x" % (ieee.src_pan, ieee.src, ieee.payload[1], ieee.payload[0]))
 		if self.radio.pan() is None \
 		and ieee.payload[1] & 0x80 \
-		and ieee.src != 0x0000:
+		and ieee.src == 0x3f15:  # hack to always use the same lamp
+		#and ieee.src != 0x0000:
 			print("NEW ROUTER: %04x.%04x" % (ieee.src_pan, ieee.src))
 			self.router = ieee.src
 			self.radio.pan(ieee.src_pan)
 
 def aps_handler(data):
-    aps = ZigbeeApplication.ZigbeeApplication(data)
-    print(aps)
+	aps = ZigbeeApplication.ZigbeeApplication(data)
+	print(aps)
 
 class NetworkDevice:
 	# This is the "well known" zigbee2mqtt key.
@@ -292,7 +293,7 @@ class NetworkDevice:
 			nwk = ZigbeeNetwork.ZigbeeNetwork(data=data, aes=self.aes)
 			# filter any dupes from this source
 			if nwk.src in self.seqs \
-                        and self.seqs[nwk.src] == nwk.seq:
+			and self.seqs[nwk.src] == nwk.seq:
 				return
 
 			self.seqs[nwk.src] = nwk.seq
@@ -317,15 +318,15 @@ class NetworkDevice:
 
 
 	def tx(self, dst, payload, frame_type=ZigbeeNetwork.FRAME_TYPE_DATA, security=True):
-		self.dev.tx(dst, ZigbeeNetwork.ZigbeeNetwork(
+		self.dev.tx(dst=dst, payload=ZigbeeNetwork.ZigbeeNetwork(
 			aes		= self.aes,
 			frame_type	= frame_type,
 			version		= 2,
 			radius		= 1,
 			seq		= self.seq,
 			dst		= dst, # 0xfffd for broadcast,
-			src		= self.radio.address(),
-			ext_src		= self.radio.mac(),
+			src		= self.dev.radio.address(),
+			ext_src		= self.dev.radio.mac(),
 			discover_route	= 0,
 			security	= security,
 			sec_key		= 1,
@@ -336,7 +337,7 @@ class NetworkDevice:
 
 		self.seq = (self.seq + 1) & 0x3F
 
-		if enc:
+		if security:
 			self.sec_seq += 1
 
 	# Send a NWK level leave packet
@@ -383,7 +384,7 @@ class NetworkDevice:
 			if not self.verbose:
 				return
 			print("NWK %04x: network status: " % (pkt.src), hexlify(pkt.payload[1:]))
-                elif cmd == ZigbeeNetwork.CMD_ROUTE_RECORD:
+		elif cmd == ZigbeeNetwork.CMD_ROUTE_RECORD:
 			if not self.verbose:
 				return
 			print("NWK %04x: route record: " % (pkt.src), hexlify(pkt.payload[1:]))
