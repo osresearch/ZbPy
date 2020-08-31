@@ -11,7 +11,7 @@ import readline
 import time
 from select import select
 from binascii import unhexlify, hexlify
-from struct import pack
+from struct import pack, unpack
 from ZbPy import Device
 from ZbPy import ZigbeeNetwork
 from ZbPy import ZigbeeApplication
@@ -44,7 +44,7 @@ def process_serial():
 	if c == b'\r':
 		return
 
-	print(str(c,"UTF-8"), end='')
+	#print(str(c,"UTF-8"), end='')
 	#stderr.write(c)
 
 #	if (b'0' <= c and c <= b'9') \
@@ -87,15 +87,19 @@ def wait_for(s):
 
 # send the commands to reboot and load the NIC firmware
 serial_dev.write(b"\x03\x03\x03")
+serial_dev.flushOutput()
 time.sleep(0.2)
 wait_for(">>> ")
 if do_reset:
 	serial_dev.write(b"reset()\r") # why \r?
+	serial_dev.flushOutput()
 	wait_for("MicroPython v")
 	wait_for(">>> ")
 serial_dev.write(b"import ZbPy.NIC\r")
+serial_dev.flushOutput()
 wait_for(">>> ")
 serial_dev.write(b"ZbPy.NIC.loop()\r")
+serial_dev.flushOutput()
 
 #stderr.write(b"reset\n")
 
@@ -116,10 +120,20 @@ class Radio:
 		s = hexlify(b)
 		print("TX: ", s)
 		s += b"\n"
+		#self.serial_dev.write(s)
+		#self.serial_dev.flushOutput()
+		#return
+
 		# slow down the transmission a bit
-		for i in range(0,len(s),16):
-			self.serial_dev.write(s[i:i+16])
-			time.sleep(0.01)
+		chunk = 32
+		for i in range(0,len(s),chunk):
+			p = s[i:i+chunk]
+			print(p, end=',')
+			self.serial_dev.write(p)
+			self.serial_dev.flushOutput()
+
+			if i + chunk < len(s):
+				time.sleep(0.05)
 	def rx(self):
 		return process_serial()
 	def mac(self):
@@ -140,10 +154,187 @@ zbdev = Device.IEEEDevice(
 
 nwkdev = Device.NetworkDevice(
 	dev = zbdev,
+	seq = int(time.time())
 )
 
-#zbdev.handler = nwkdev.rx
-nwkdev.verbose = True
+
+#
+# Handle Zigbee Device profile cluster messages
+# These are important for joining the network, etc.
+#
+aps_counter = 0
+
+def zcl_device(nwkdev, pkt):
+	global aps_counter
+
+	aps = pkt.payload
+	if aps.frame_type != ZigbeeApplication.FRAME_TYPE_DATA:
+		return
+
+	if aps.cluster == ZigbeeApplication.CLUSTER_DEVICE_NODE_DESCRIPTOR_RESPONSE:
+		print("Node Descriptor:", pkt)
+	elif aps.cluster == ZigbeeApplication.CLUSTER_DEVICE_NODE_DESCRIPTOR_REQUEST:
+		print("--- Node Descriptor Request ---")
+		aps_counter = (aps_counter + 1) & 0x7F
+		nwkdev.tx(dst=pkt.src, ack_req=True, payload=ZigbeeApplication.ZigbeeApplication(
+			profile = ZigbeeApplication.PROFILE_DEVICE,
+			cluster = ZigbeeApplication.CLUSTER_DEVICE_NODE_DESCRIPTOR_RESPONSE,
+			seq = aps_counter,
+			payload = pack("<BBHHBHBHHHB",
+				0x12, # seq
+				0x00, # success
+				addr[1], # our nwk
+				0x4002, # type == end device, simple descriptor, 2.4 GHz OQPSK band
+				0x80, # capabilities
+				0x117c, # manufacturer code ikea
+				0x52, # max buffer size
+				0x0052, # max inomcing transfer size
+				0x2c00, # server flags/stack compliance
+				0x0052, # max outgoing transfer size
+				0x00, # capability field (no extended data)
+			),
+		))
+	elif aps.cluster == ZigbeeApplication.CLUSTER_DEVICE_ENDPOINT_REQUEST:
+		print("--- Endpoint Request ---")
+		aps_counter = (aps_counter + 1) & 0x7F
+		nwkdev.tx(dst=pkt.src, ack_req=True, payload=ZigbeeApplication.ZigbeeApplication(
+			profile = ZigbeeApplication.PROFILE_DEVICE,
+			cluster = ZigbeeApplication.CLUSTER_DEVICE_ENDPOINT_RESPONSE,
+			seq = aps_counter,
+			payload = pack("<BBHBB",
+				0x13, # seq
+				0x00, # success
+				addr[1], # our nwk
+				1, # ony one endpoint
+				1, # and that endpoint is #1
+			),
+		))
+	elif aps.cluster == ZigbeeApplication.CLUSTER_DEVICE_ENDPOINT_DESCR_REQUEST:
+		print("--- Endpoint Descriptor Request ---")
+		aps_counter = (aps_counter + 1) & 0x7F
+		nwkdev.tx(dst=pkt.src, ack_req=True, payload=ZigbeeApplication.ZigbeeApplication(
+			profile = ZigbeeApplication.PROFILE_DEVICE,
+			cluster = ZigbeeApplication.CLUSTER_DEVICE_ENDPOINT_DESCR_RESPONSE,
+			seq = aps_counter,
+			payload = pack("<BBH"+"BBHHB"+"BHHHHHHHHH"+"BHHHH",
+				0x14, # seq
+				0x00, # success
+				addr[1], # our nwk
+				# size and descriptor header
+				1 + 3*2 + 1 + 9*2 + 1 + 6*2, # size
+				1, # endpoint
+				0xc05e, # zll?  0x0104, # profile home automation
+				0x0100, # dimable lamp
+				0x02, # application version
+				# input clusters
+				9, # input cluster count
+0,
+3,
+4,
+5,
+6,
+8,
+768,
+2821,
+4096,
+
+				#0x0000, # basic cluster
+				#0x0001, # power configuration
+				#0x0003, # identity cluster
+				#0x0004, # ? cluster
+				#0x0005, # ? cluster
+				#0x0006, # on/off cluster
+				#0x0008, # level control cluster
+				#0x0300, # color control
+				# output clusers
+				4, # output cluster count
+5, 25, 32, 4096,
+				#0x0003, # identity cluster
+				#0x0004, # ? cluster
+				#0x0005, # ? cluster
+				#0x0006, # on/off cluster
+				#0x0008, # level control cluster
+				#0x0300, # color control
+			),
+		))
+
+
+manufacturer = b"IKEA of Sweden"
+model = b"FLOALT panel WS 30x30"
+datecode = b"20200830"
+build = b"0.0.001"
+
+attributes = {
+0x0000: pack("<HBBB", 0x0000, 0, 0x20, 0x03), # ZCL version
+0x0001: pack("<HBBB", 0x0001, 0, 0x20, 0x33), # application version
+0x0002: pack("<HBBB", 0x0002, 0, 0x20, 0x62), # stack version
+0x0003: pack("<HBBB", 0x0003, 0, 0x20, 0x01), # HW version
+0x0004: pack("<HBBB", 0x0004, 0, 0x42, len(manufacturer)) + manufacturer,
+0x0005: pack("<HBBB", 0x0005, 0, 0x42, len(model)) + model,
+0x0006: pack("<HBBB", 0x0006, 0, 0x42, len(datecode)) + datecode,
+#0x0007: pack("<HBBB", 0x0007, 0, 0x30, 0x03), # power source == battery
+0x0007: pack("<HBBB", 0x0007, 0, 0x30, 0x01), # power source == mains
+0x4000: pack("<HBBB", 0x4000, 0, 0x42, len(build)) + build,
+}
+
+#
+# Home automation commands
+#
+def zcl_homeautomation(nwkdev, pkt):
+	global aps_counter
+
+	aps = pkt.payload
+	if aps.frame_type == ZigbeeApplication.FRAME_TYPE_DATA:
+		print("--- Read home automation data ---")
+		aps_counter = (aps_counter + 1) & 0x7F
+		fcf = aps.payload[0]
+		seq = aps.payload[1]
+		cmd = aps.payload[2]
+
+		reply = b''
+		for off in range(3,len(aps.payload),2):
+			(key,) = unpack("<H", aps.payload[off:off+2])
+			print("attr %d:" % (off), key)
+			if key in attributes:
+				reply += attributes[key]
+			else:
+				reply += pack("<HB", key, 0x01)
+
+		nwkdev.tx(dst=pkt.src, ack_req=True, payload=ZigbeeApplication.ZigbeeApplication(
+			profile = aps.profile,
+			cluster = aps.cluster,
+			ack_req = True,
+			seq = aps_counter,
+			src = aps.dst, # swap the src/dst for the reply
+			dst = aps.src,
+			payload = pack("<BBB",
+				0x18, # profile-wide
+				aps_counter,
+				1, # command Read Attribute Response
+			) + reply
+		))
+
+def aps_handler(nwkdev, pkt):
+	if not pkt.valid:
+		print("ENCRYPTION FAILED:", pkt)
+		return
+
+	aps = ZigbeeApplication.ZigbeeApplication(data=pkt.payload)
+	if aps.security:
+		print("APS security not yet supported")
+		return
+
+	pkt.payload = aps
+
+	if aps.profile == ZigbeeApplication.PROFILE_DEVICE:
+		zcl_device(nwkdev, pkt)
+	elif aps.profile == ZigbeeApplication.PROFILE_HOME:
+		zcl_homeautomation(nwkdev, pkt)
+	else:
+		print("UNKNOWN PROFILE %04x" % (aps.profile), pkt)
+
+#nwkdev.verbose = 1
+nwkdev.handler = aps_handler
 
 
 boot_time = time.time()
@@ -151,6 +342,7 @@ last_beacon = 0
 last_join = 0
 last_req = 0
 announcement_sent = False
+query_sent = False
 
 while True:
 	zbdev.tick()
@@ -185,9 +377,9 @@ while True:
 	and zbdev.pending_seq is None:
 		print("--- Device announcement ---")
 		announcement_sent = True
-		nwkdev.tx(ZigbeeNetwork.DEST_BROADCAST, ZigbeeApplication.ZigbeeApplication(
-			cluster = ZigbeeApplication.CLUSTER_DEVICE_ANNOUNCEMENT,
+		nwkdev.tx(dst=ZigbeeNetwork.DEST_BROADCAST, ack_req=False, payload=ZigbeeApplication.ZigbeeApplication(
 			profile = ZigbeeApplication.PROFILE_DEVICE,
+			cluster = ZigbeeApplication.CLUSTER_DEVICE_ANNOUNCEMENT,
 			payload = bytes([
 				0x12,
 				(addr[1] >> 0) & 0xFF,
@@ -204,9 +396,26 @@ while True:
 			]),
 		))
 
-	elif now - last_req > 1.0 \
+	elif not query_sent \
+	and False \
+	and now - last_join > 4 \
+	and zbdev.pending_seq is None:
+		print("--- Coordinator query ---")
+		query_sent = True
+		coord_nwk = 0x0000
+		nwkdev.tx(dst=coord_nwk, ack_req=True, payload=ZigbeeApplication.ZigbeeApplication(
+			profile = ZigbeeApplication.PROFILE_DEVICE,
+			cluster = ZigbeeApplication.CLUSTER_DEVICE_NODE_DESCRIPTOR_REQUEST,
+			payload = bytes([
+				0x01, # seq
+				(coord_nwk >> 0) & 0xFF,
+				(coord_nwk >> 8) & 0xFF,
+			]),
+		))
+
+	elif now - last_req > 0.8 \
 	and zbdev.pending_seq is None:
 		# NWK is now set; send data requests to keep the party going
-			print("--- Data request ---")
-			zbdev.data_request()
-			last_req = now
+		#print("--- Data request ---")
+		zbdev.data_request()
+		last_req = now
