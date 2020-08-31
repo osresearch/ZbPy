@@ -154,11 +154,13 @@ class ZigbeeNetwork:
 		if not self.security:
 			# the rest of the packet is the payload
 			self.payload = b[j:]
+			self.valid = True
 		else:
 			# security header is present, attempt to decrypt
 			# and validate the message.
 			try:
 				self.ccm_decrypt(b, j)
+				self.valid = True
 			except:
 				print("---- BAD CCM ----")
 				self.valid = False
