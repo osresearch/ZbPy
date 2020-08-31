@@ -260,8 +260,8 @@ class IEEEDevice:
 			self.router = ieee.src
 			self.radio.pan(ieee.src_pan)
 
-def aps_handler(data):
-	aps = ZigbeeApplication.ZigbeeApplication(data)
+def aps_handler(nwkdev, pkt):
+	aps = ZigbeeApplication.ZigbeeApplication(data=pkt.payload)
 	print(aps)
 
 class NetworkDevice:
@@ -276,7 +276,7 @@ class NetworkDevice:
 	def __init__(self, dev, seq = 0):
 		self.dev = dev
 		self.handler = aps_handler
-		self.verbose = False # don't print chatter messages
+		self.verbose = 0 # don't print chatter messages
 		self.seq = 0 # this is the 8-bit sequence and wraps quickly
 		self.sec_seq = seq # should be read from a config file and be always incrementing
 
@@ -297,8 +297,10 @@ class NetworkDevice:
 				return
 
 			self.seqs[nwk.src] = nwk.seq
+
 			# don't print broadcast messages
-			if nwk.dst & 0xFFF0 != 0xFFF0:
+			if self.verbose \
+			and nwk.dst & 0xFFF0 != 0xFFF0:
 				print(nwk)
 		except:
 			print("NWK error: " + hexlify(data))
@@ -312,17 +314,17 @@ class NetworkDevice:
 		elif nwk.frame_type == ZigbeeNetwork.FRAME_TYPE_DATA:
 			# pass it up the stack
 			print(nwk)
-			return self.handler(nwk.payload)
+			return self.handler(self, nwk)
 		else:
 			print("NWK type %02x?" % (nwk.frame_type))
 
 
-	def tx(self, dst, payload, frame_type=ZigbeeNetwork.FRAME_TYPE_DATA, security=True):
-		self.dev.tx(dst=dst, payload=ZigbeeNetwork.ZigbeeNetwork(
+	def tx(self, dst, payload, frame_type=ZigbeeNetwork.FRAME_TYPE_DATA, security=True, ack_req=True):
+		self.dev.tx(dst=dst, ack_req=ack_req, payload=ZigbeeNetwork.ZigbeeNetwork(
 			aes		= self.aes,
 			frame_type	= frame_type,
 			version		= 2,
-			radius		= 1,
+			radius		= 30,
 			seq		= self.seq,
 			dst		= dst, # 0xfffd for broadcast,
 			src		= self.dev.radio.address(),
@@ -359,7 +361,7 @@ class NetworkDevice:
 			self.dev.radio.address(0xFFFF) # remove our NWK
 			self.dev.radio.pan(0xFFFF) # remove our PAN
 		elif cmd == ZigbeeNetwork.CMD_ROUTE_REQUEST:
-			if not self.verbose:
+			if self.verbose < 2:
 				return
 			print("NWK %04x: Route request %02x: %02x%02x" % (
 				pkt.src,
@@ -368,7 +370,7 @@ class NetworkDevice:
 				pkt.payload[3],
 			))
 		elif cmd == ZigbeeNetwork.CMD_LINK_STATUS:
-			if not self.verbose:
+			if self.verbose < 2:
 				return
 			count = pkt.payload[1] & 0x1f
 			offset = 2
@@ -381,11 +383,11 @@ class NetworkDevice:
 				offset += 3
 			print(" ]")
 		elif cmd == ZigbeeNetwork.CMD_NETWORK_STATUS:
-			if not self.verbose:
+			if self.verbose < 2:
 				return
 			print("NWK %04x: network status: " % (pkt.src), hexlify(pkt.payload[1:]))
 		elif cmd == ZigbeeNetwork.CMD_ROUTE_RECORD:
-			if not self.verbose:
+			if self.verbose < 2:
 				return
 			print("NWK %04x: route record: " % (pkt.src), hexlify(pkt.payload[1:]))
 		else:
