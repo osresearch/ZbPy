@@ -15,7 +15,13 @@ FRAME_TYPE_ACK = 0x1
 PROFILE_DEVICE = 0x0000
 PROFILE_HOME = 0x0104
 
-CLUSTER_DEVICE_ANNOUNCEMENT = 0x00013
+CLUSTER_DEVICE_NODE_DESCRIPTOR_REQUEST	= 0x0002
+CLUSTER_DEVICE_NODE_DESCRIPTOR_RESPONSE	= 0x8002
+CLUSTER_DEVICE_ENDPOINT_REQUEST		= 0x0005
+CLUSTER_DEVICE_ENDPOINT_RESPONSE	= 0x8005
+CLUSTER_DEVICE_ENDPOINT_DESCR_REQUEST	= 0x0004
+CLUSTER_DEVICE_ENDPOINT_DESCR_RESPONSE	= 0x8004
+CLUSTER_DEVICE_ANNOUNCEMENT		= 0x0013
 
 class ZigbeeApplication:
 
@@ -79,7 +85,8 @@ class ZigbeeApplication:
 		fcf = b[j]; j += 1
 		self.frame_type = (fcf >> 0) & 3
 		self.mode = (fcf >> 2) & 3
-		self.ack_req = (fcf >> 7) & 1
+		self.security = (fcf >> 5) & 1	# not yet supported
+		self.ack_req = (fcf >> 6) & 1
 
 		if self.mode == MODE_GROUP:
 			self.dst = (b[j+1] << 8) | (b[j+0] << 0)
@@ -102,7 +109,7 @@ class ZigbeeApplication:
 		fcf = 0 \
 			| (self.frame_type << 0) \
 			| (self.mode << 2) \
-			| (self.ack_req << 7)
+			| (self.ack_req << 6)
 
 		hdr.append(fcf)
 		if self.mode == MODE_GROUP:
